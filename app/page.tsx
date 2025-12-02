@@ -1,81 +1,65 @@
-'use client'; // Wichtig, da wir Interaktivität haben
+import Image from "next/image";
 
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { Match, Slot } from '@/types';
-import Link from 'next/link';
-
-export default function Dashboard() {
-  const [matches, setMatches] = useState<Match[]>([]);
-  const [slots, setSlots] = useState<Slot[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Daten laden
-  useEffect(() => {
-    fetchData();
-    
-    // Echtzeit-Updates
-    const channel = supabase.channel('public:slots')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'slots' }, () => {
-        fetchData();
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, []);
-
-  async function fetchData() {
-    const { data: m } = await supabase.from('matches').select('*').order('id');
-    const { data: s } = await supabase.from('slots').select('*');
-    if (m) setMatches(m);
-    if (s) setSlots(s);
-    setLoading(false);
-  }
-
-  // Helper für offene Slots
-  const getOpenCount = (matchId: number) => slots.filter(s => s.match_id === matchId && !s.user_name).length;
-
-  if (loading) return <div className="p-10 text-center">Lade Dienste...</div>;
-
+export default function Home() {
   return (
-    <main className="p-4 space-y-4 pb-20 max-w-md mx-auto">
-      <div className="flex justify-between items-end mb-2 px-1">
-        <h2 className="text-slate-700 font-bold text-lg">Heimspiele (Rasenplatz)</h2>
-        <span className="text-xs text-slate-400 mb-1">Saison 24/25</span>
-      </div>
-
-      {matches.map((match) => {
-        const openCount = getOpenCount(match.id);
-        let statusColor = 'bg-blue-600'; // Voll
-        if (openCount > 2) statusColor = 'bg-red-600';
-        else if (openCount > 0) statusColor = 'bg-amber-400';
-
-        return (
-          <Link key={match.id} href={`/match/${match.id}`} className="block">
-            <div className="group bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden relative transition-all hover:shadow-md hover:border-blue-300">
-              {/* Ampel-Leiste */}
-              <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${statusColor}`} />
-              
-              <div className="p-4 pl-5">
-                <div className="flex justify-between items-start">
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    {match.date} • {match.time} Uhr
-                  </div>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border shadow-sm ${
-                    openCount === 0 ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-red-50 text-red-700 border-red-100'
-                  }`}>
-                    {openCount === 0 ? 'Voll besetzt' : `Gesucht: ${openCount}`}
-                  </span>
-                </div>
-                <div className="text-xl font-bold text-slate-800 mt-1 truncate">
-                  <span className="text-slate-400 font-normal text-sm mr-1">vs.</span>
-                  {match.opponent}
-                </div>
-              </div>
-            </div>
-          </Link>
-        );
-      })}
-    </main>
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
+      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
+        <Image
+          className="dark:invert"
+          src="/next.svg"
+          alt="Next.js logo"
+          width={100}
+          height={20}
+          priority
+        />
+        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
+          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
+            To get started, edit the page.tsx file.
+          </h1>
+          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
+            Looking for a starting point or more instructions? Head over to{" "}
+            <a
+              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+              className="font-medium text-zinc-950 dark:text-zinc-50"
+            >
+              Templates
+            </a>{" "}
+            or the{" "}
+            <a
+              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+              className="font-medium text-zinc-950 dark:text-zinc-50"
+            >
+              Learning
+            </a>{" "}
+            center.
+          </p>
+        </div>
+        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
+          <a
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
+            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Image
+              className="dark:invert"
+              src="/vercel.svg"
+              alt="Vercel logomark"
+              width={16}
+              height={16}
+            />
+            Deploy Now
+          </a>
+          <a
+            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
+            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Documentation
+          </a>
+        </div>
+      </main>
+    </div>
   );
 }
