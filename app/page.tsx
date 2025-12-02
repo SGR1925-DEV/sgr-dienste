@@ -1,65 +1,212 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import { Match, Slot } from '@/types';
+import Link from 'next/link';
+import { motion } from 'framer-motion';
+import { Calendar, ChevronRight, Shield, Users, MapPin } from 'lucide-react';
+import { clsx } from 'clsx';
+
+export default function Dashboard() {
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fake-Delay, damit man die Skeleton-Animation sieht (kann später raus)
+  useEffect(() => {
+    const load = async () => {
+      // Parallel Fetching
+      const [mRes, sRes] = await Promise.all([
+        supabase.from('matches').select('*').order('id'),
+        supabase.from('slots').select('*')
+      ]);
+      
+      if (mRes.data) setMatches(mRes.data);
+      if (sRes.data) setSlots(sRes.data);
+      setLoading(false);
+    };
+
+    // Realtime Listener
+    const channel = supabase.channel('dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'slots' }, load)
+      .subscribe();
+
+    load();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  // Helpers
+  const getOpenCount = (matchId: number) => slots.filter(s => s.match_id === matchId && !s.user_name).length;
+  const getTotalSlots = (matchId: number) => slots.filter(s => s.match_id === matchId).length;
+  const getProgress = (matchId: number) => {
+    const total = getTotalSlots(matchId);
+    if (total === 0) return 0;
+    const filled = total - getOpenCount(matchId);
+    return Math.round((filled / total) * 100);
+  };
+
+  // --- SKELETON LOADER (Der "Instagram"-Effekt) ---
+  if (loading) return (
+    <div className="max-w-md mx-auto p-6 space-y-8 bg-slate-50 min-h-screen">
+      <div className="h-8 w-1/2 bg-slate-200 rounded-lg animate-pulse" />
+      <div className="h-64 bg-white rounded-3xl shadow-sm animate-pulse" />
+      <div className="space-y-4">
+        {[1, 2, 3].map(i => <div key={i} className="h-24 bg-white rounded-2xl shadow-sm animate-pulse" />)}
+      </div>
     </div>
+  );
+
+  const nextMatch = matches[0];
+  const upcomingMatches = matches.slice(1);
+
+  return (
+    <main className="min-h-screen bg-slate-50 pb-24">
+      
+      {/* HEADER / GREETING */}
+      <header className="sticky top-0 z-20 bg-slate-50/80 backdrop-blur-md px-6 py-4 border-b border-slate-200/50">
+        <div className="max-w-md mx-auto flex justify-between items-center">
+          <div>
+            <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-0.5">Willkommen zurück</p>
+            <h1 className="text-xl font-bold text-slate-900">SG Ruwertal 1925 e.V.</h1>
+          </div>
+          <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold border border-blue-200">
+            SGR
+          </div>
+        </div>
+      </header>
+
+      <div className="max-w-md mx-auto p-6 space-y-8">
+        
+        {/* HERO SECTION: Das nächste Spiel */}
+        {nextMatch && (
+          <section>
+            <div className="flex justify-between items-end mb-4">
+              <h2 className="text-lg font-bold text-slate-800">Als nächstes</h2>
+              <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-1 rounded-full">Heimspiel</span>
+            </div>
+
+            <Link href={`/match/${nextMatch.id}`}>
+              <motion.div 
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="relative overflow-hidden bg-white rounded-[2rem] shadow-xl shadow-blue-900/5 border border-slate-100"
+              >
+                {/* Dynamischer Background Gradient basierend auf Status */}
+                <div className={clsx(
+                  "absolute top-0 left-0 w-full h-2",
+                  getOpenCount(nextMatch.id) === 0 ? "bg-emerald-500" : "bg-gradient-to-r from-blue-600 to-indigo-600"
+                )} />
+
+                <div className="p-6">
+                  <div className="flex justify-between items-start mb-6">
+                    <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
+                       <Calendar className="w-4 h-4 text-blue-500" />
+                       {nextMatch.date} • {nextMatch.time}
+                    </div>
+                    {/* Pulsierender Indikator wenn dringend */}
+                    {getOpenCount(nextMatch.id) > 2 && (
+                      <span className="relative flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col items-center text-center mb-8">
+                    <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mb-3 text-2xl shadow-inner border border-slate-100">
+                      ⚽️
+                    </div>
+                    <h3 className="text-2xl font-black text-slate-800 tracking-tight leading-none mb-1">
+                      {nextMatch.opponent}
+                    </h3>
+                    <p className="text-slate-400 text-sm font-medium flex items-center gap-1">
+                      <MapPin className="w-3 h-3" /> Sportplatz Kasel
+                    </p>
+                  </div>
+
+                  {/* Progress Bar Modern */}
+                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                    <div className="flex justify-between text-sm mb-2 font-semibold">
+                      <span className="text-slate-600">Dienstplan Status</span>
+                      <span className={clsx(
+                        getOpenCount(nextMatch.id) === 0 ? "text-emerald-600" : "text-blue-600"
+                      )}>
+                        {getProgress(nextMatch.id)}% Belegt
+                      </span>
+                    </div>
+                    <div className="h-2.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                      <div 
+                        className={clsx(
+                          "h-full transition-all duration-1000 ease-out rounded-full",
+                          getOpenCount(nextMatch.id) === 0 ? "bg-emerald-500" : "bg-blue-600"
+                        )}
+                        style={{ width: `${getProgress(nextMatch.id)}%` }} 
+                      />
+                    </div>
+                    <div className="mt-3 text-xs text-slate-400 flex justify-between items-center">
+                      <div className="flex -space-x-2">
+                         {/* Fake Avatars für Social Proof */}
+                         {[1,2,3].map(i => (
+                           <div key={i} className="w-6 h-6 rounded-full border-2 border-white bg-slate-200" />
+                         ))}
+                      </div>
+                      <span>Noch {getOpenCount(nextMatch.id)} Helfer gesucht</span>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </Link>
+          </section>
+        )}
+
+        {/* LIST SECTION: Kommende Spiele */}
+        <section>
+          <h2 className="text-lg font-bold text-slate-800 mb-4 px-1">Kommende Spiele</h2>
+          <div className="space-y-3">
+            {upcomingMatches.map((match, i) => (
+              <Link key={match.id} href={`/match/${match.id}`}>
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  className="group bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between active:scale-[0.98] transition-transform"
+                >
+                  <div className="flex items-center gap-4">
+                    {/* Kleines Datums-Icon */}
+                    <div className="flex flex-col items-center justify-center w-12 h-12 bg-blue-50 text-blue-700 rounded-xl font-bold leading-none border border-blue-100">
+                      <span className="text-[10px] uppercase opacity-60 mb-0.5">{match.date.split('.')[0]}</span>
+                      <span className="text-lg">{match.date.split('.')[1]}</span>
+                    </div>
+                    
+                    <div>
+                      <h4 className="font-bold text-slate-800 text-lg leading-tight">{match.opponent}</h4>
+                      <div className="text-xs text-slate-400 font-medium mt-1 flex items-center gap-2">
+                        <span>{match.time} Uhr</span>
+                        {getOpenCount(match.id) > 0 && (
+                          <span className="text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded text-[10px]">
+                            {getOpenCount(match.id)} offen
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <ChevronRight className="text-slate-300 w-5 h-5 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
+                </motion.div>
+              </Link>
+            ))}
+            
+            {matches.length === 0 && !loading && (
+              <div className="text-center py-12 text-slate-400">
+                <Shield className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                <p>Aktuell keine Spiele geplant.</p>
+              </div>
+            )}
+          </div>
+        </section>
+
+      </div>
+    </main>
   );
 }
