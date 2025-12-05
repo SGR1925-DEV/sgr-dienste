@@ -16,7 +16,8 @@ import {
   Utensils, 
   Shield,
   Coins,
-  Sparkles
+  Sparkles,
+  Info
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -31,7 +32,6 @@ const getCategoryIcon = (category: string) => {
 };
 
 // --- CUSTOM COMPONENT: Liquid Glass Container ---
-// Das simuliert den "Import" einer Liquid Glass Komponente
 const LiquidContainer = ({ children, className }: { children: React.ReactNode; className?: string }) => (
   <div className={clsx(
     "relative overflow-hidden bg-gradient-to-br from-white/60 to-blue-50/30 backdrop-blur-xl border border-white/60 shadow-[inset_0_2px_4px_rgba(255,255,255,0.9)] ring-1 ring-blue-500/5 transition-all",
@@ -78,19 +78,14 @@ export default function MatchDetail() {
     setIsSubmitting(true);
     const { error } = await supabase.from('slots').update({ user_name: inputName }).eq('id', selectedSlot.id);
     if (!error) {
+      // Optimistisches Update
       setSlots(current => current.map(s => s.id === selectedSlot.id ? { ...s, user_name: inputName } : s));
       setSelectedSlot(null);
       setInputName('');
+    } else {
+      alert("Fehler: Konnte nicht speichern. Versuche es erneut.");
     }
     setIsSubmitting(false);
-  };
-
-  const handleSignOut = async (slotId: number) => {
-    if(!confirm("Eintrag entfernen?")) return;
-    const { error } = await supabase.from('slots').update({ user_name: null }).eq('id', slotId);
-    if (!error) {
-      setSlots(current => current.map(s => s.id === slotId ? { ...s, user_name: null } : s));
-    }
   };
 
   const categories = Array.from(new Set(slots.map(s => s.category)));
@@ -105,13 +100,13 @@ export default function MatchDetail() {
       <header className="fixed top-0 left-0 right-0 z-20 px-4 py-3 flex items-center justify-between pointer-events-none">
         <button 
           onClick={() => router.back()} 
-          className="pointer-events-auto h-10 w-10 bg-white/70 backdrop-blur-xl shadow-sm border border-white/20 rounded-full flex items-center justify-center text-slate-700 active:scale-90 transition-all"
+          className="pointer-events-auto h-10 w-10 bg-white/70 backdrop-blur-xl shadow-sm border border-white/20 rounded-full flex items-center justify-center text-slate-700 active:scale-90 transition-all hover:bg-white"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
       </header>
 
-      {/* 2. HERO SECTION (Zentriert & Clean) */}
+      {/* 2. HERO SECTION */}
       <div className="pt-24 px-6 pb-10 flex flex-col items-center text-center">
         <motion.div 
            initial={{ opacity: 0, scale: 0.95 }}
@@ -137,7 +132,7 @@ export default function MatchDetail() {
         </div>
       </div>
 
-      {/* 3. CONTENT AREA (Islands Layout) */}
+      {/* 3. CONTENT AREA */}
       <div className="max-w-md mx-auto px-4 space-y-8">
         {categories.map((cat, catIndex) => (
           <motion.div 
@@ -152,7 +147,7 @@ export default function MatchDetail() {
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">{cat}</h3>
             </div>
 
-            {/* Die "Insel" (Container) */}
+            {/* Die "Insel" */}
             <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100/50">
               {slots.filter(s => s.category === cat).map((slot, idx) => {
                 const isTaken = !!slot.user_name;
@@ -160,11 +155,12 @@ export default function MatchDetail() {
                 return (
                   <div 
                     key={slot.id} 
+                    // Nur klickbar wenn NICHT vergeben
                     onClick={() => !isTaken && setSelectedSlot(slot)}
                     className={clsx(
                       "relative p-4 flex items-center justify-between transition-colors",
-                      idx !== 0 && "border-t border-slate-50", // Trennlinie zwischen Items
-                      !isTaken ? "active:bg-blue-50 cursor-pointer hover:bg-slate-50" : "bg-slate-50/50"
+                      idx !== 0 && "border-t border-slate-50",
+                      !isTaken ? "active:bg-blue-50 cursor-pointer hover:bg-slate-50" : "bg-slate-50/50" // Ausgegrauter Hintergrund wenn besetzt
                     )}
                   >
                     {/* Linke Seite: Zeit & Status */}
@@ -175,13 +171,13 @@ export default function MatchDetail() {
                           ? "bg-white border-slate-100 text-slate-300" 
                           : "bg-blue-50 border-blue-100 text-blue-600"
                       )}>
-                        {slot.time.split(' - ')[0]}
+                        {slot.time.split(' - ')[0].replace(' Uhr', '')}
                       </div>
                       
                       <div>
                         {isTaken ? (
                           <div className="flex flex-col">
-                            <span className="text-sm font-bold text-slate-800">{slot.user_name}</span>
+                            <span className="text-sm font-bold text-slate-900">{slot.user_name}</span>
                             <span className="text-[10px] font-medium text-emerald-600 flex items-center gap-1">
                               <Check className="w-3 h-3" /> Bestätigt
                             </span>
@@ -195,12 +191,13 @@ export default function MatchDetail() {
                       </div>
                     </div>
 
-                    {/* Rechte Seite: Action Icon */}
+                    {/* Rechte Seite: Action Icon (Pfeil oder Schloss) */}
                     <div>
                       {isTaken ? (
-                        <button onClick={(e) => { e.stopPropagation(); handleSignOut(slot.id); }} className="p-2 text-slate-300 hover:text-red-500 transition-colors">
-                          <User className="w-5 h-5 opacity-50" />
-                        </button>
+                        // Kein Button mehr zum Austragen! Nur noch visuelles Feedback.
+                        <div className="p-2 text-slate-200">
+                          <User className="w-5 h-5 opacity-20" />
+                        </div>
                       ) : (
                         <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-200">
                           <ChevronRight className="w-5 h-5 ml-0.5" />
@@ -229,7 +226,6 @@ export default function MatchDetail() {
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
               className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-[2.5rem] p-6 pb-10 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] max-w-md mx-auto"
             >
-              {/* Handle Bar */}
               <div className="w-10 h-1.5 bg-slate-200 rounded-full mx-auto mb-8" />
               
               <div className="flex items-center gap-4 mb-8">
@@ -246,9 +242,6 @@ export default function MatchDetail() {
 
               <div className="space-y-4">
                 
-                {/* HIER NUTZEN WIR JETZT DIE CUSTOM COMPONENT
-                  Sieht aus wie ein Import, ist aber unsere eigene Definition von oben.
-                */}
                 <LiquidContainer className="p-2 rounded-2xl focus-within:ring-2 focus-within:ring-blue-500/20">
                   <label className="relative block text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-3 pt-1">
                     Dein Name
@@ -259,9 +252,18 @@ export default function MatchDetail() {
                     placeholder="Vorname Nachname"
                     value={inputName}
                     onChange={(e) => setInputName(e.target.value)}
-                    className="relative w-full p-3 bg-transparent border-none outline-none text-lg font-bold text-slate-800 placeholder:text-slate-400/70"
+                    // Hier die dunklere Textfarbe für bessere Lesbarkeit
+                    className="relative w-full p-3 bg-transparent border-none outline-none text-lg font-bold text-slate-900 placeholder:text-slate-400"
                   />
                 </LiquidContainer>
+
+                <div className="flex items-start gap-2 px-1">
+                  <Info className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                  <p className="text-[10px] text-slate-400 leading-tight">
+                    Mit dem Speichern wird dein Name öffentlich in der Liste angezeigt. 
+                    Änderungen sind nur über den Admin möglich.
+                  </p>
+                </div>
 
                 <button 
                   onClick={handleSignUp}
