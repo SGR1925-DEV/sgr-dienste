@@ -1,17 +1,22 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Match, Slot } from '@/types';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
-import { Calendar, ChevronRight, Shield, MapPin, Lock } from 'lucide-react';
+import { Calendar, Shield, Lock, History } from 'lucide-react';
 import { clsx } from 'clsx';
+import { parseMatchDate } from '@/lib/utils';
+import MatchHero from '@/components/dashboard/MatchHero';
+import MatchList from '@/components/dashboard/MatchList';
+
+type TabType = 'upcoming' | 'past';
 
 export default function Dashboard() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabType>('upcoming');
 
   useEffect(() => {
     const load = async () => {
@@ -42,6 +47,57 @@ export default function Dashboard() {
     return Math.round((filled / total) * 100);
   };
 
+  // Filtere Spiele basierend auf Tab
+  const { upcomingMatches, pastMatches, openCounts } = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const upcoming: Match[] = [];
+    const past: Match[] = [];
+    const counts: Record<number, number> = {};
+    
+    matches.forEach(match => {
+      counts[match.id] = getOpenCount(match.id);
+      
+      const matchDate = parseMatchDate(match.date);
+      if (!matchDate) {
+        // Falls Datum nicht geparst werden kann, behandle es als zukünftig
+        upcoming.push(match);
+        return;
+      }
+      
+      const matchDateOnly = new Date(matchDate.getFullYear(), matchDate.getMonth(), matchDate.getDate());
+      
+      if (matchDateOnly >= today) {
+        upcoming.push(match);
+      } else {
+        past.push(match);
+      }
+    });
+    
+    // Sortiere kommende Spiele aufsteigend (nächstes zuerst)
+    upcoming.sort((a, b) => {
+      const dateA = parseMatchDate(a.date);
+      const dateB = parseMatchDate(b.date);
+      if (!dateA || !dateB) return 0;
+      return dateA.getTime() - dateB.getTime();
+    });
+    
+    // Sortiere vergangene Spiele absteigend (neuestes zuerst)
+    past.sort((a, b) => {
+      const dateA = parseMatchDate(a.date);
+      const dateB = parseMatchDate(b.date);
+      if (!dateA || !dateB) return 0;
+      return dateB.getTime() - dateA.getTime();
+    });
+    
+    return { upcomingMatches: upcoming, pastMatches: past, openCounts: counts };
+  }, [matches, slots]);
+
+  const displayedMatches = activeTab === 'upcoming' ? upcomingMatches : pastMatches;
+  const nextMatch = activeTab === 'upcoming' ? upcomingMatches[0] : null;
+  const listMatches = activeTab === 'upcoming' ? upcomingMatches.slice(1) : pastMatches;
+
   if (loading) return (
     <div className="max-w-md mx-auto p-6 space-y-8 bg-slate-50 min-h-screen">
       <div className="h-8 w-1/2 bg-slate-200 rounded-lg animate-pulse" />
@@ -51,9 +107,6 @@ export default function Dashboard() {
       </div>
     </div>
   );
-
-  const nextMatch = matches[0];
-  const upcomingMatches = matches.slice(1);
 
   return (
     <main className="min-h-screen bg-slate-50 pb-12">
@@ -73,128 +126,50 @@ export default function Dashboard() {
 
       <div className="max-w-md mx-auto p-6 space-y-8">
         
-        {/* HERO SECTION */}
-        {nextMatch && (
-          <section>
-            <div className="flex justify-between items-end mb-4">
-              <h2 className="text-lg font-bold text-slate-800">Als nächstes</h2>
-              <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-1 rounded-full">Heimspiel</span>
-            </div>
+        {/* TAB SWITCHER */}
+        <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-slate-100">
+          <button
+            onClick={() => setActiveTab('upcoming')}
+            className={clsx(
+              "flex-1 py-3 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2",
+              activeTab === 'upcoming'
+                ? "bg-blue-600 text-white shadow-lg"
+                : "text-slate-400 hover:text-slate-600"
+            )}
+          >
+            <Calendar className="w-4 h-4" />
+            Aktuell
+          </button>
+          <button
+            onClick={() => setActiveTab('past')}
+            className={clsx(
+              "flex-1 py-3 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2",
+              activeTab === 'past'
+                ? "bg-blue-600 text-white shadow-lg"
+                : "text-slate-400 hover:text-slate-600"
+            )}
+          >
+            <History className="w-4 h-4" />
+            Vergangen
+          </button>
+        </div>
 
-            <Link href={`/match/${nextMatch.id}`}>
-              <motion.div 
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="relative overflow-hidden bg-white rounded-[2rem] shadow-xl shadow-blue-900/5 border border-slate-100"
-              >
-                <div className={clsx(
-                  "absolute top-0 left-0 w-full h-2",
-                  getOpenCount(nextMatch.id) === 0 ? "bg-emerald-500" : "bg-gradient-to-r from-blue-600 to-indigo-600"
-                )} />
-
-                <div className="p-6">
-                  <div className="flex justify-between items-start mb-6">
-                    <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
-                       <Calendar className="w-4 h-4 text-blue-500" />
-                       {nextMatch.date} • {nextMatch.time}
-                    </div>
-                    {getOpenCount(nextMatch.id) > 2 && (
-                      <span className="relative flex h-3 w-3">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col items-center text-center mb-8">
-                    <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mb-3 text-2xl shadow-inner border border-slate-100">
-                      ⚽️
-                    </div>
-                    <h3 className="text-2xl font-black text-slate-800 tracking-tight leading-none mb-1">
-                      {nextMatch.opponent}
-                    </h3>
-                    <p className="text-slate-400 text-sm font-medium flex items-center gap-1">
-                      <MapPin className="w-3 h-3" /> Sportplatz Kasel
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                    <div className="flex justify-between text-sm mb-2 font-semibold">
-                      <span className="text-slate-600">Dienstplan Status</span>
-                      <span className={clsx(
-                        getOpenCount(nextMatch.id) === 0 ? "text-emerald-600" : "text-blue-600"
-                      )}>
-                        {getProgress(nextMatch.id)}% Belegt
-                      </span>
-                    </div>
-                    <div className="h-2.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                      <div 
-                        className={clsx(
-                          "h-full transition-all duration-1000 ease-out rounded-full",
-                          getOpenCount(nextMatch.id) === 0 ? "bg-emerald-500" : "bg-blue-600"
-                        )}
-                        style={{ width: `${getProgress(nextMatch.id)}%` }} 
-                      />
-                    </div>
-                    <div className="mt-3 text-xs text-slate-400 flex justify-between items-center">
-                      <div className="flex -space-x-2">
-                         {[1,2,3].map(i => (
-                           <div key={i} className="w-6 h-6 rounded-full border-2 border-white bg-slate-200" />
-                         ))}
-                      </div>
-                      <span>Noch {getOpenCount(nextMatch.id)} Helfer gesucht</span>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            </Link>
-          </section>
+        {/* HERO SECTION - Nur für kommende Spiele */}
+        {nextMatch && activeTab === 'upcoming' && (
+          <MatchHero 
+            match={nextMatch}
+            openCount={openCounts[nextMatch.id] || 0}
+            progress={getProgress(nextMatch.id)}
+          />
         )}
 
         {/* LIST SECTION */}
-        <section>
-          <h2 className="text-lg font-bold text-slate-800 mb-4 px-1">Kommende Spiele</h2>
-          <div className="space-y-3">
-            {upcomingMatches.map((match, i) => (
-              <Link key={match.id} href={`/match/${match.id}`}>
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.1 }}
-                  className="group bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between active:scale-[0.98] transition-transform"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="flex flex-col items-center justify-center w-12 h-12 bg-blue-50 text-blue-700 rounded-xl font-bold leading-none border border-blue-100">
-                      <span className="text-[10px] uppercase opacity-60 mb-0.5">{match.date.split('.')[0]}</span>
-                      <span className="text-lg">{match.date.split('.')[1]}</span>
-                    </div>
-                    
-                    <div>
-                      <h4 className="font-bold text-slate-800 text-lg leading-tight">{match.opponent}</h4>
-                      <div className="text-xs text-slate-400 font-medium mt-1 flex items-center gap-2">
-                        <span>{match.time} Uhr</span>
-                        {getOpenCount(match.id) > 0 && (
-                          <span className="text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded text-[10px]">
-                            {getOpenCount(match.id)} offen
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <ChevronRight className="text-slate-300 w-5 h-5 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
-                </motion.div>
-              </Link>
-            ))}
-            
-            {matches.length === 0 && !loading && (
-              <div className="text-center py-12 text-slate-400">
-                <Shield className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                <p>Aktuell keine Spiele geplant.</p>
-              </div>
-            )}
-          </div>
-        </section>
+        <MatchList 
+          matches={listMatches}
+          openCounts={openCounts}
+          isPast={activeTab === 'past'}
+          title={activeTab === 'upcoming' ? 'Kommende Spiele' : 'Vergangene Spiele'}
+        />
 
         {/* FOOTER MIT LOGIN LINK */}
         <footer className="mt-12 mb-6 flex justify-center">

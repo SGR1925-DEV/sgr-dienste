@@ -12,6 +12,7 @@ export interface Slot {
   category: string;
   time: string;
   user_name: string | null;
+  user_contact: string | null;
 }
 
 export interface ServiceType {
