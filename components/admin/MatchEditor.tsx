@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Settings, LayoutList, Save, Plus, Trash2, Users, Phone } from 'lucide-react';
+import { ArrowLeft, Settings, LayoutList, Save, Plus, Trash2, Users, Phone, UserCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 import { ServiceType, Slot } from '@/types';
 import { parseDisplayDateToISO, formatDateForDisplay, isoStringToDate } from '@/lib/utils';
@@ -14,6 +14,7 @@ interface MatchEditorProps {
     date: string; // ISO format (YYYY-MM-DD) for internal storage
     time: string; // HH:mm format
     location: string;
+    team: string;
   };
   editorSlots: Slot[];
   serviceTypes: ServiceType[];
@@ -101,16 +102,32 @@ export default function MatchEditor({
                 />
               </div>
             </div>
-            <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-2 mb-1 block">
-                Ort
-              </label>
-              <input 
-                value={editForm.location} 
-                onChange={e => onFormChange('location', e.target.value)}
-                className="w-full p-3 bg-slate-50 rounded-xl text-sm font-black text-slate-900 outline-none border border-transparent focus:border-blue-100 focus:bg-blue-50/50 transition-all" 
-                placeholder="Ort" 
-              />
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-2 mb-1 block">
+                  Ort
+                </label>
+                <input 
+                  value={editForm.location} 
+                  onChange={e => onFormChange('location', e.target.value)}
+                  className="w-full p-3 bg-slate-50 rounded-xl text-sm font-black text-slate-900 outline-none border border-transparent focus:border-blue-100 focus:bg-blue-50/50 transition-all" 
+                  placeholder="Ort" 
+                />
+              </div>
+              <div className="w-1/2">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-2 mb-1 block">
+                  Mannschaft
+                </label>
+                <select
+                  value={editForm.team}
+                  onChange={e => onFormChange('team', e.target.value)}
+                  className="w-full p-3 bg-slate-50 rounded-xl text-sm font-black text-slate-900 outline-none border border-transparent focus:border-blue-100 focus:bg-blue-50/50 transition-all"
+                >
+                  <option value="1. Mannschaft">1. Mannschaft</option>
+                  <option value="2. Mannschaft">2. Mannschaft</option>
+                  <option value="3. Mannschaft">3. Mannschaft</option>
+                </select>
+              </div>
             </div>
             <button 
               onClick={onSaveMatchMetadata}

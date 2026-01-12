@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { Match, ServiceType, Slot } from '@/types';
+import { Match, ServiceType, Slot, ServiceTypeMember } from '@/types';
 import { Plus, Settings, Trash2 } from 'lucide-react';
 import { parseDisplayDateToISO, formatDateForDisplay, formatDisplayDate, dateToISOString, parseMatchDate } from '@/lib/utils';
 import AdminHeader from '@/components/admin/AdminHeader';
@@ -20,12 +20,13 @@ export default function AdminPage() {
   
   const [matches, setMatches] = useState<Match[]>([]);
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
+  const [serviceTypeMembers, setServiceTypeMembers] = useState<ServiceTypeMember[]>([]);
   const [allSlots, setAllSlots] = useState<Slot[]>([]); 
 
   // Editor State
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingMatchId, setEditingMatchId] = useState<number | null>(null); 
-  const [editForm, setEditForm] = useState({ opponent: '', date: '', time: '14:30', location: 'Sportplatz Kasel' });
+  const [editForm, setEditForm] = useState({ opponent: '', date: '', time: '14:30', location: 'Sportplatz Kasel', team: '1. Mannschaft' });
   const [editorSlots, setEditorSlots] = useState<Slot[]>([]); 
   const [newSlotConfig, setNewSlotConfig] = useState<{ [key: string]: { count: number, time: string } }>({});
 
@@ -67,13 +68,15 @@ export default function AdminPage() {
   }, [router]);
 
   const loadData = async () => {
-    const [mRes, sRes, slotsRes] = await Promise.all([
+    const [mRes, sRes, membersRes, slotsRes] = await Promise.all([
       supabase.from('matches').select('*').order('id', { ascending: false }),
       supabase.from('service_types').select('*').order('id'),
+      supabase.from('service_type_members').select('*').order('order', { ascending: true }),
       supabase.from('slots').select('*')
     ]);
     if (mRes.data) setMatches(mRes.data);
     if (sRes.data) setServiceTypes(sRes.data);
+    if (membersRes.data) setServiceTypeMembers(membersRes.data);
     if (slotsRes.data) setAllSlots(slotsRes.data);
   };
 
@@ -139,7 +142,8 @@ export default function AdminPage() {
         opponent: match.opponent, 
         date: isoDate || '', 
         time: match.time, 
-        location: match.location || 'Sportplatz Kasel' 
+        location: match.location || 'Sportplatz Kasel',
+        team: match.team || '1. Mannschaft'
       });
       
       const { data } = await supabase.from('slots').select('*').eq('match_id', match.id).order('id');
@@ -147,7 +151,7 @@ export default function AdminPage() {
     } else {
       setEditingMatchId(null);
       const today = new Date().toISOString().split('T')[0];
-      setEditForm({ opponent: '', date: today, time: '14:30', location: 'Sportplatz Kasel' });
+      setEditForm({ opponent: '', date: today, time: '14:30', location: 'Sportplatz Kasel', team: '1. Mannschaft' });
       setEditorSlots([]);
     }
     
@@ -186,7 +190,8 @@ export default function AdminPage() {
         opponent: editForm.opponent, 
         date: formattedDate,
         time: editForm.time, 
-        location: editForm.location 
+        location: editForm.location,
+        team: editForm.team
     };
 
     let matchId = editingMatchId;
@@ -306,6 +311,19 @@ export default function AdminPage() {
       },
     });
   };
+  const addServiceTypeMember = async (serviceTypeId: number, name: string) => {
+    if (!name.trim()) return;
+    await supabase.from('service_type_members').insert([{ 
+      service_type_id: serviceTypeId, 
+      name: name.trim(),
+      order: 0
+    }]);
+    loadData();
+  };
+  const deleteServiceTypeMember = async (memberId: number) => {
+    await supabase.from('service_type_members').delete().eq('id', memberId);
+    loadData();
+  };
 
   const deleteMatch = async (id: number, opponent: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Verhindert, dass der Click-Event weitergegeben wird
@@ -378,7 +396,14 @@ export default function AdminPage() {
                     className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex justify-between items-center active:bg-slate-50 cursor-pointer transition-colors group"
                   >
                     <div className="flex-1">
-                      <div className="font-bold text-slate-800 text-lg">{match.opponent}</div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="font-bold text-slate-800 text-lg">{match.opponent}</div>
+                        {match.team && (
+                          <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-full border border-blue-100">
+                            {match.team}
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-3 text-xs font-bold text-slate-400 mt-1">
                         <span>{formatDisplayDate(match.date)}</span>
                         <span>{match.time}</span>
@@ -408,10 +433,13 @@ export default function AdminPage() {
         {activeTab === 'settings' && (
           <ServiceTypeManager
             serviceTypes={serviceTypes}
+            serviceTypeMembers={serviceTypeMembers}
             newServiceInput={newServiceInput}
             onNewServiceInputChange={setNewServiceInput}
             onAddServiceType={addServiceType}
             onDeleteServiceType={deleteServiceType}
+            onAddMember={addServiceTypeMember}
+            onDeleteMember={deleteServiceTypeMember}
           />
         )}
       </div>

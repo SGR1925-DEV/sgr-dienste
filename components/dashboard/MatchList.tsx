@@ -67,12 +67,19 @@ export default function MatchList({ matches, openCounts, isPast = false, title }
                   </div>
                   
                   <div>
-                    <h4 className={clsx(
-                      "font-bold text-lg leading-tight",
-                      isPast ? "text-slate-500" : "text-slate-800"
-                    )}>
-                      {match.opponent}
-                    </h4>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className={clsx(
+                        "font-bold text-lg leading-tight",
+                        isPast ? "text-slate-500" : "text-slate-800"
+                      )}>
+                        {match.opponent}
+                      </h4>
+                      {match.team && (
+                        <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-full border border-blue-100">
+                          {match.team}
+                        </span>
+                      )}
+                    </div>
                     <div className={clsx(
                       "text-xs font-medium mt-1 flex items-center gap-2",
                       isPast ? "text-slate-400" : "text-slate-400"
