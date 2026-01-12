@@ -22,7 +22,6 @@ export default function MatchHero({ match, openCount, progress }: MatchHeroProps
     <section>
       <div className="flex justify-between items-end mb-4">
         <h2 className="text-lg font-bold text-slate-800">Als nächstes</h2>
-        <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-1 rounded-full">Heimspiel</span>
       </div>
 
       <Link href={`/match/${match.id}`}>
@@ -54,6 +53,11 @@ export default function MatchHero({ match, openCount, progress }: MatchHeroProps
               <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mb-3 text-2xl shadow-inner border border-slate-100">
                 ⚽️
               </div>
+              {match.team && (
+                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full mb-2 border border-blue-100">
+                  {match.team}
+                </span>
+              )}
               <h3 className="text-2xl font-black text-slate-800 tracking-tight leading-none mb-1">
                 {match.opponent}
               </h3>

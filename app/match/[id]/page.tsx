@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Match, Slot } from '@/types';
+import { Match, Slot, ServiceType, ServiceTypeMember } from '@/types';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Calendar, Clock } from 'lucide-react';
 import { formatDisplayDate } from '@/lib/utils';
@@ -17,6 +17,8 @@ export default function MatchDetail() {
 
   const [match, setMatch] = useState<Match | null>(null);
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
+  const [serviceTypeMembers, setServiceTypeMembers] = useState<ServiceTypeMember[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Modal State
@@ -32,6 +34,13 @@ export default function MatchDetail() {
       
       const { data: slotsData } = await supabase.from('slots').select('*').eq('match_id', matchId).order('id');
       if (slotsData) setSlots(slotsData);
+
+      const [typesRes, membersRes] = await Promise.all([
+        supabase.from('service_types').select('*').order('id'),
+        supabase.from('service_type_members').select('*').order('order', { ascending: true })
+      ]);
+      if (typesRes.data) setServiceTypes(typesRes.data);
+      if (membersRes.data) setServiceTypeMembers(membersRes.data);
       
       setLoading(false);
     };
@@ -101,6 +110,9 @@ export default function MatchDetail() {
         </motion.div>
         
         <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none mb-2">
+          {match.team && (
+            <span className="text-blue-600 text-xs font-bold bg-blue-50 px-3 py-1 rounded-full border border-blue-100 inline-block mb-2">{match.team}</span>
+          )}
           <span className="text-slate-400 text-lg font-bold block mb-1">Heimspiel vs.</span>
           {match.opponent}
         </h1>
@@ -125,6 +137,11 @@ export default function MatchDetail() {
         inputName={inputName}
         inputContact={inputContact}
         isSubmitting={isSubmitting}
+        availableMembers={selectedSlot ? (() => {
+          const serviceType = serviceTypes.find(st => st.name === selectedSlot.category);
+          if (!serviceType) return [];
+          return serviceTypeMembers.filter(m => m.service_type_id === serviceType.id);
+        })() : []}
         onClose={() => setSelectedSlot(null)}
         onNameChange={setInputName}
         onContactChange={setInputContact}
