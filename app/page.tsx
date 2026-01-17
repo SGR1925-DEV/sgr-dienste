@@ -4,9 +4,9 @@ import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Match, Slot } from '@/types';
 import Link from 'next/link';
-import { Calendar, Shield, Lock, History } from 'lucide-react';
+import { Calendar, Shield, Lock, History, Download } from 'lucide-react';
 import { clsx } from 'clsx';
-import { parseMatchDate } from '@/lib/utils';
+import { parseMatchDate, downloadICalendar } from '@/lib/utils';
 import MatchHero from '@/components/dashboard/MatchHero';
 import MatchList from '@/components/dashboard/MatchList';
 import Leaderboard from '@/components/dashboard/Leaderboard';
@@ -127,32 +127,51 @@ export default function Dashboard() {
 
       <div className="max-w-md mx-auto p-6 space-y-8">
         
-        {/* TAB SWITCHER */}
-        <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-slate-100">
-          <button
-            onClick={() => setActiveTab('upcoming')}
-            className={clsx(
-              "flex-1 py-3 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2",
-              activeTab === 'upcoming'
-                ? "bg-blue-600 text-white shadow-lg"
-                : "text-slate-400 hover:text-slate-600"
-            )}
-          >
-            <Calendar className="w-4 h-4" />
-            Aktuell
-          </button>
-          <button
-            onClick={() => setActiveTab('past')}
-            className={clsx(
-              "flex-1 py-3 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2",
-              activeTab === 'past'
-                ? "bg-blue-600 text-white shadow-lg"
-                : "text-slate-400 hover:text-slate-600"
-            )}
-          >
-            <History className="w-4 h-4" />
-            Vergangen
-          </button>
+        {/* TAB SWITCHER + EXPORT */}
+        <div className="space-y-3">
+          <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-slate-100">
+            <button
+              onClick={() => setActiveTab('upcoming')}
+              className={clsx(
+                "flex-1 py-3 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2",
+                activeTab === 'upcoming'
+                  ? "bg-blue-600 text-white shadow-lg"
+                  : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+              <Calendar className="w-4 h-4" />
+              Aktuell
+            </button>
+            <button
+              onClick={() => setActiveTab('past')}
+              className={clsx(
+                "flex-1 py-3 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2",
+                activeTab === 'past'
+                  ? "bg-blue-600 text-white shadow-lg"
+                  : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+              <History className="w-4 h-4" />
+              Vergangen
+            </button>
+          </div>
+
+          {/* EXPORT BUTTON */}
+          {displayedMatches.length > 0 && (
+            <button
+              onClick={() => {
+                const matchesToExport = activeTab === 'upcoming' ? upcomingMatches : pastMatches;
+                const filename = activeTab === 'upcoming' 
+                  ? 'sgr-dienste-aktuelle-spiele.ics'
+                  : 'sgr-dienste-vergangene-spiele.ics';
+                downloadICalendar(matchesToExport, filename);
+              }}
+              className="w-full py-3 px-4 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center gap-2 text-sm font-bold text-blue-600 hover:bg-blue-50 transition-colors active:scale-[0.98]"
+            >
+              <Download className="w-4 h-4" />
+              {activeTab === 'upcoming' ? 'Aktuelle Spiele exportieren' : 'Vergangene Spiele exportieren'}
+            </button>
+          )}
         </div>
 
         {/* HERO SECTION - Nur für kommende Spiele */}

@@ -5,8 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Match, Slot, ServiceType, ServiceTypeMember } from '@/types';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Calendar, Clock } from 'lucide-react';
-import { formatDisplayDate } from '@/lib/utils';
+import { ArrowLeft, Calendar, Clock, Download } from 'lucide-react';
+import { formatDisplayDate, downloadICalendar } from '@/lib/utils';
 import SlotList from '@/components/match/SlotList';
 import SignUpModal from '@/components/match/SignUpModal';
 
@@ -126,6 +126,17 @@ export default function MatchDetail() {
             <Clock className="w-3.5 h-3.5 text-blue-500" /> {match.time}
           </div>
         </div>
+
+        {/* Export Button */}
+        <button
+          onClick={() => {
+            downloadICalendar([match], `sgr-dienste-${match.opponent.replace(/\s+/g, '-').toLowerCase()}-${match.id}.ics`);
+          }}
+          className="mt-4 px-6 py-2.5 bg-blue-600 text-white rounded-full shadow-lg shadow-blue-500/20 flex items-center gap-2 text-sm font-bold hover:bg-blue-700 transition-colors active:scale-[0.98]"
+        >
+          <Download className="w-4 h-4" />
+          Spiel exportieren
+        </button>
       </div>
 
       {/* Slots Liste */}
