@@ -323,6 +323,7 @@ export const generateICalendar = (matches: Array<{
 
 /**
  * Download-Helper für iCalendar Export
+ * Optimiert für mobile Geräte: Öffnet direkt im Kalender statt Download
  */
 export const downloadICalendar = (matches: Array<{
   id: number;
@@ -337,9 +338,27 @@ export const downloadICalendar = (matches: Array<{
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = filename;
+  link.style.display = 'none';
+  
+  // Mobile Detection: iOS, iPadOS, Android
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  
+  if (isMobile) {
+    // Auf mobilen Geräten: OHNE download Attribut, damit Browser die Datei direkt öffnet
+    // iOS/iPadOS: Öffnet direkt den Kalender-Dialog
+    // Android: Chrome erkennt .ics Dateien und öffnet Kalender-App
+    link.setAttribute('target', '_blank');
+  } else {
+    // Auf Desktop: Mit download Attribut für expliziten Download
+    link.download = filename;
+  }
+  
   document.body.appendChild(link);
   link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  
+  // Cleanup nach kurzer Verzögerung (für mobile Geräte wichtig)
+  setTimeout(() => {
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, 100);
 };
