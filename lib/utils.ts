@@ -217,3 +217,129 @@ export const dateToISOString = (date: Date | undefined): string => {
   const day = date.getDate().toString().padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
+
+/**
+ * Generiert iCalendar (.ics) Format für Kalenderexport
+ * @param matches Array von Matches die exportiert werden sollen
+ * @returns iCalendar Format als String
+ */
+export const generateICalendar = (matches: Array<{
+  id: number;
+  opponent: string;
+  date: string;
+  time: string;
+  location: string;
+  team?: string | null;
+}>): string => {
+  const formatDateTime = (date: Date, time: string): string => {
+    // Parse time (z.B. "14:30" oder "14:30 - Ende")
+    const timeMatch = time.match(/(\d{1,2}):(\d{2})/);
+    if (!timeMatch) return '';
+    
+    const hours = parseInt(timeMatch[1], 10);
+    const minutes = parseInt(timeMatch[2], 10);
+    
+    const dt = new Date(date);
+    dt.setHours(hours, minutes, 0, 0);
+    
+    // Format: YYYYMMDDTHHMMSS (iCalendar Format)
+    const year = dt.getFullYear();
+    const month = (dt.getMonth() + 1).toString().padStart(2, '0');
+    const day = dt.getDate().toString().padStart(2, '0');
+    const hour = dt.getHours().toString().padStart(2, '0');
+    const minute = dt.getMinutes().toString().padStart(2, '0');
+    const second = dt.getSeconds().toString().padStart(2, '0');
+    
+    return `${year}${month}${day}T${hour}${minute}${second}`;
+  };
+
+  const formatDateTimeEnd = (date: Date, time: string): string => {
+    // Endzeit: Standardmäßig 2,5 Stunden nach Start
+    const timeMatch = time.match(/(\d{1,2}):(\d{2})/);
+    if (!timeMatch) return '';
+    
+    const hours = parseInt(timeMatch[1], 10);
+    const minutes = parseInt(timeMatch[2], 10);
+    
+    const dt = new Date(date);
+    dt.setHours(hours + 2, minutes + 30, 0, 0); // +2.5 Stunden
+    
+    const year = dt.getFullYear();
+    const month = (dt.getMonth() + 1).toString().padStart(2, '0');
+    const day = dt.getDate().toString().padStart(2, '0');
+    const hour = dt.getHours().toString().padStart(2, '0');
+    const minute = dt.getMinutes().toString().padStart(2, '0');
+    const second = dt.getSeconds().toString().padStart(2, '0');
+    
+    return `${year}${month}${day}T${hour}${minute}${second}`;
+  };
+
+  const escapeText = (text: string): string => {
+    return text
+      .replace(/\\/g, '\\\\')
+      .replace(/,/g, '\\,')
+      .replace(/;/g, '\\;')
+      .replace(/\n/g, '\\n');
+  };
+
+  let ics = 'BEGIN:VCALENDAR\r\n';
+  ics += 'VERSION:2.0\r\n';
+  ics += 'PRODID:-//SG Ruwertal//Dienstplan//DE\r\n';
+  ics += 'CALSCALE:GREGORIAN\r\n';
+  ics += 'METHOD:PUBLISH\r\n';
+
+  matches.forEach(match => {
+    const matchDate = parseMatchDate(match.date);
+    if (!matchDate) return;
+
+    const dtStart = formatDateTime(matchDate, match.time);
+    const dtEnd = formatDateTimeEnd(matchDate, match.time);
+    
+    if (!dtStart || !dtEnd) return;
+
+    const summary = match.team 
+      ? `Heimspiel ${match.team} vs. ${match.opponent}`
+      : `Heimspiel vs. ${match.opponent}`;
+    
+    const description = `Dienstplan: ${match.opponent}\nOrt: ${match.location || 'Sportplatz Kasel'}`;
+    const location = match.location || 'Sportplatz Kasel';
+
+    ics += 'BEGIN:VEVENT\r\n';
+    ics += `UID:match-${match.id}@sgruwertal.de\r\n`;
+    ics += `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z\r\n`;
+    ics += `DTSTART:${dtStart}\r\n`;
+    ics += `DTEND:${dtEnd}\r\n`;
+    ics += `SUMMARY:${escapeText(summary)}\r\n`;
+    ics += `DESCRIPTION:${escapeText(description)}\r\n`;
+    ics += `LOCATION:${escapeText(location)}\r\n`;
+    ics += 'STATUS:CONFIRMED\r\n';
+    ics += 'SEQUENCE:0\r\n';
+    ics += 'END:VEVENT\r\n';
+  });
+
+  ics += 'END:VCALENDAR\r\n';
+  return ics;
+};
+
+/**
+ * Download-Helper für iCalendar Export
+ */
+export const downloadICalendar = (matches: Array<{
+  id: number;
+  opponent: string;
+  date: string;
+  time: string;
+  location: string;
+  team?: string | null;
+}>, filename: string = 'sgr-dienste-spiele.ics'): void => {
+  const icsContent = generateICalendar(matches);
+  const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
