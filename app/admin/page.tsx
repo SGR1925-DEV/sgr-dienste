@@ -236,12 +236,13 @@ export default function AdminPage() {
     const count = config?.count || 1;
     const time = config?.time || '14:00 - Ende';
 
-    const slotsToInsert = Array(count).fill({ 
+    // Erstelle unabhängige Objekte für jeden Slot (statt Array.fill mit gleicher Referenz)
+    const slotsToInsert = Array.from({ length: count }, () => ({ 
         match_id: editingMatchId, 
         category: category, 
         time: time, 
         user_name: null 
-    });
+    }));
     
     await supabase.from('slots').insert(slotsToInsert);
     
