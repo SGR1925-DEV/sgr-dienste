@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Settings, LayoutList, Save, Plus, Trash2, Users, Phone, UserCircle } from 'lucide-react';
+import { ArrowLeft, Settings, LayoutList, Save, Plus, Trash2, Users, Phone, UserCircle, AlertCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 import { ServiceType, Slot } from '@/types';
 import { parseDisplayDateToISO, formatDateForDisplay, isoStringToDate } from '@/lib/utils';
@@ -162,50 +162,77 @@ export default function MatchEditor({
 
                   {/* Existing Slots */}
                   <div className="divide-y divide-slate-50">
-                    {typeSlots.map(slot => (
-                      <div 
-                        key={slot.id} 
-                        className="p-3 flex items-start justify-between hover:bg-slate-50 transition-colors"
-                      >
-                        <div className="flex gap-3">
-                          <div className={clsx(
-                            "w-2 h-2 rounded-full mt-1.5",
-                            slot.user_name ? "bg-emerald-500" : "bg-slate-300"
-                          )} />
-                          <div className="flex flex-col gap-0.5">
-                            <div className="text-xs font-bold text-slate-900">{slot.time}</div>
-                            
-                            {/* USER INFO & CONTACT */}
-                            {slot.user_name ? (
-                              <div className="flex flex-col bg-emerald-50/50 p-1.5 rounded-lg mt-1 border border-emerald-100">
-                                <span className="text-[11px] text-emerald-700 font-bold flex items-center gap-1">
-                                  <Users className="w-3 h-3" /> {slot.user_name}
-                                </span>
-                                {slot.user_contact && (
-                                  <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
-                                    <Phone className="w-3 h-3 text-slate-400" /> 
-                                    <a 
-                                      href={`tel:${slot.user_contact}`} 
-                                      className="hover:underline hover:text-blue-600"
-                                    >
-                                      {slot.user_contact}
-                                    </a>
+                    {typeSlots.map(slot => {
+                      const hasCancellationRequest = slot.cancellation_requested;
+                      
+                      return (
+                        <div 
+                          key={slot.id} 
+                          className={clsx(
+                            "p-3 flex items-start justify-between hover:bg-slate-50 transition-colors",
+                            hasCancellationRequest && "bg-orange-50/50 border-l-4 border-orange-500"
+                          )}
+                        >
+                          <div className="flex gap-3 flex-1">
+                            <div className={clsx(
+                              "w-2 h-2 rounded-full mt-1.5",
+                              slot.user_name 
+                                ? (hasCancellationRequest ? "bg-orange-500" : "bg-emerald-500")
+                                : "bg-slate-300"
+                            )} />
+                            <div className="flex flex-col gap-0.5 flex-1">
+                              <div className="flex items-center gap-2">
+                                <div className="text-xs font-bold text-slate-900">{slot.time}</div>
+                                {hasCancellationRequest && (
+                                  <span className="text-[10px] font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200">
+                                    Absage Wunsch!
                                   </span>
                                 )}
                               </div>
-                            ) : (
-                              <span className="text-[10px] text-slate-400 italic">Offen</span>
-                            )}
+                              
+                              {/* USER INFO & CONTACT */}
+                              {slot.user_name ? (
+                                <div className={clsx(
+                                  "flex flex-col p-1.5 rounded-lg mt-1 border",
+                                  hasCancellationRequest
+                                    ? "bg-orange-50/50 border-orange-200"
+                                    : "bg-emerald-50/50 border-emerald-100"
+                                )}>
+                                  <span className={clsx(
+                                    "text-[11px] font-bold flex items-center gap-1",
+                                    hasCancellationRequest ? "text-orange-700" : "text-emerald-700"
+                                  )}>
+                                    <Users className="w-3 h-3" /> {slot.user_name}
+                                  </span>
+                                  {slot.user_contact && (
+                                    <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
+                                      <Phone className="w-3 h-3 text-slate-400" /> 
+                                      <a 
+                                        href={slot.user_contact.includes('@') ? `mailto:${slot.user_contact}` : `tel:${slot.user_contact}`}
+                                        className="hover:underline hover:text-blue-600"
+                                      >
+                                        {slot.user_contact}
+                                      </a>
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 italic">Offen</span>
+                              )}
+                            </div>
                           </div>
+                          {slot.user_name && (
+                            <button 
+                              onClick={() => onDeleteSlot(slot.id, slot.user_name)}
+                              className="text-slate-300 hover:text-red-500 p-2 transition-colors"
+                              title="Nutzer informieren und austragen"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
-                        <button 
-                          onClick={() => onDeleteSlot(slot.id, slot.user_name)}
-                          className="text-slate-300 hover:text-red-500 p-2 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {/* Add New Slots Controls */}

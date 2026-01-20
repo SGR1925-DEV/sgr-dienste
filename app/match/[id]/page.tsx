@@ -9,7 +9,7 @@ import { ArrowLeft, Calendar, Clock, Download } from 'lucide-react';
 import { formatDisplayDate, downloadICalendar } from '@/lib/utils';
 import SlotList from '@/components/match/SlotList';
 import SignUpModal from '@/components/match/SignUpModal';
-import { signUpForSlot } from '@/app/actions';
+import { signUpForSlot, requestCancellation } from '@/app/actions';
 import AlertDialog from '@/components/ui/AlertDialog';
 
 export default function MatchDetail() {
@@ -75,12 +75,12 @@ export default function MatchDetail() {
       return;
     }
 
-    // Validate email (now required)
-    if (!inputContact || !inputContact.includes('@')) {
+    // Validate contact (email or phone)
+    if (!inputContact || inputContact.trim().length === 0) {
       setAlertDialog({
         isOpen: true,
-        title: 'E-Mail erforderlich',
-        message: 'Bitte gib eine gültige E-Mail-Adresse ein. Du erhältst eine Bestätigungs-E-Mail.',
+        title: 'Kontakt erforderlich',
+        message: 'Bitte gib deine E-Mail-Adresse oder Telefonnummer ein.',
         variant: 'error',
       });
       return;
@@ -98,7 +98,9 @@ export default function MatchDetail() {
       setAlertDialog({
         isOpen: true,
         title: 'Erfolgreich eingetragen!',
-        message: 'Du hast dich erfolgreich eingetragen. Eine Bestätigungs-E-Mail wurde an dich gesendet.',
+        message: inputContact.includes('@') 
+          ? 'Du hast dich erfolgreich eingetragen. Eine Bestätigungs-E-Mail wurde an dich gesendet.'
+          : 'Du hast dich erfolgreich eingetragen.',
         variant: 'success',
       });
 
@@ -110,6 +112,34 @@ export default function MatchDetail() {
         isOpen: true,
         title: 'Fehler',
         message: result.error || 'Fehler beim Speichern. Bitte erneut versuchen.',
+        variant: 'error',
+      });
+    }
+
+    setIsSubmitting(false);
+  };
+
+  const handleRequestCancellation = async (slot: Slot) => {
+    setIsSubmitting(true);
+
+    const result = await requestCancellation(slot.id);
+
+    if (result.success) {
+      // Reload data to get updated slot status
+      const { data: slotsData } = await supabase.from('slots').select('*').eq('match_id', matchId).order('id');
+      if (slotsData) setSlots(slotsData);
+
+      setAlertDialog({
+        isOpen: true,
+        title: 'Absage beantragt',
+        message: 'Deine Absage wurde beantragt. Ein Administrator wird sich darum kümmern.',
+        variant: 'success',
+      });
+    } else {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: result.error || 'Fehler beim Beantragen der Absage. Bitte erneut versuchen.',
         variant: 'error',
       });
     }
@@ -179,7 +209,7 @@ export default function MatchDetail() {
       </div>
 
       {/* Slots Liste */}
-      <SlotList slots={slots} onSlotClick={setSelectedSlot} />
+      <SlotList slots={slots} onSlotClick={setSelectedSlot} onRequestCancellation={handleRequestCancellation} />
 
       {/* Eintragen Modal */}
       <SignUpModal
