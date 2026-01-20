@@ -109,14 +109,15 @@ export default function SignUpModal({
               )}
             </LiquidContainer>
 
-            {/* Kontakt Input (Optional) */}
+            {/* E-Mail Input (Required) */}
             <LiquidContainer className="p-2 rounded-2xl focus-within:ring-2 focus-within:ring-blue-500/20">
               <label className="relative block text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-3 pt-1 flex items-center gap-1">
-                <Phone className="w-3 h-3" /> Telefon / E-Mail (Optional)
+                <Phone className="w-3 h-3" /> E-Mail (Pflicht für Bestätigung) *
               </label>
               <input 
-                type="text" 
-                placeholder="Für Rückfragen (privat)"
+                type="email" 
+                autoComplete="email"
+                placeholder="deine@email.de"
                 value={inputContact}
                 onChange={e => onContactChange(e.target.value)}
                 className="relative w-full p-3 bg-transparent border-none outline-none text-lg font-medium text-slate-900 placeholder:text-slate-400"
@@ -126,14 +127,14 @@ export default function SignUpModal({
             <div className="flex items-start gap-2 px-1">
               <Info className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
               <p className="text-[10px] text-slate-400 leading-tight">
-                Dein Name ist öffentlich in der Liste sichtbar. Deine Telefonnummer/E-Mail sieht nur der Admin. 
-                Die Eintragung ist verbindlich.
+                Dein Name ist öffentlich in der Liste sichtbar. Deine E-Mail sieht nur der Admin und wird für die Bestätigung verwendet. 
+                Die Eintragung ist verbindlich. Du erhältst eine Bestätigungs-E-Mail.
               </p>
             </div>
 
             <button 
               onClick={onSubmit}
-              disabled={inputName.length < 2 || isSubmitting}
+              disabled={inputName.length < 2 || !inputContact || !inputContact.includes('@') || isSubmitting}
               className="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl text-lg shadow-xl shadow-blue-500/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:shadow-none"
             >
               {isSubmitting ? '...' : 'Verbindlich eintragen'}

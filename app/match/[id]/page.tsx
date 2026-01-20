@@ -9,6 +9,8 @@ import { ArrowLeft, Calendar, Clock, Download } from 'lucide-react';
 import { formatDisplayDate, downloadICalendar } from '@/lib/utils';
 import SlotList from '@/components/match/SlotList';
 import SignUpModal from '@/components/match/SignUpModal';
+import { signUpForSlot } from '@/app/actions';
+import AlertDialog from '@/components/ui/AlertDialog';
 
 export default function MatchDetail() {
   const params = useParams();
@@ -26,6 +28,14 @@ export default function MatchDetail() {
   const [inputName, setInputName] = useState('');
   const [inputContact, setInputContact] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Alert Dialog State
+  const [alertDialog, setAlertDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    variant: 'info' as 'info' | 'success' | 'error',
+  });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -55,26 +65,55 @@ export default function MatchDetail() {
   }, [matchId]);
 
   const handleSignUp = async () => {
-    if (!selectedSlot || inputName.length < 2) return;
+    if (!selectedSlot || inputName.length < 2) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Validierungsfehler',
+        message: 'Bitte gib deinen Namen ein (mindestens 2 Zeichen).',
+        variant: 'error',
+      });
+      return;
+    }
+
+    // Validate email (now required)
+    if (!inputContact || !inputContact.includes('@')) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'E-Mail erforderlich',
+        message: 'Bitte gib eine gültige E-Mail-Adresse ein. Du erhältst eine Bestätigungs-E-Mail.',
+        variant: 'error',
+      });
+      return;
+    }
+
     setIsSubmitting(true);
 
-    const { error } = await supabase
-      .from('slots')
-      .update({ 
-        user_name: inputName,
-        user_contact: inputContact || null
-      })
-      .eq('id', selectedSlot.id);
+    const result = await signUpForSlot(selectedSlot.id, inputName, inputContact);
 
-    if (!error) {
-      // Optimistisches Update der UI
-      setSlots(current => current.map(s => s.id === selectedSlot.id ? { ...s, user_name: inputName, user_contact: inputContact || null } : s));
+    if (result.success) {
+      // Reload data to get updated slot status
+      const { data: slotsData } = await supabase.from('slots').select('*').eq('match_id', matchId).order('id');
+      if (slotsData) setSlots(slotsData);
+
+      setAlertDialog({
+        isOpen: true,
+        title: 'Erfolgreich eingetragen!',
+        message: 'Du hast dich erfolgreich eingetragen. Eine Bestätigungs-E-Mail wurde an dich gesendet.',
+        variant: 'success',
+      });
+
       setSelectedSlot(null);
       setInputName('');
       setInputContact('');
     } else {
-      alert("Fehler beim Speichern. Bitte erneut versuchen.");
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: result.error || 'Fehler beim Speichern. Bitte erneut versuchen.',
+        variant: 'error',
+      });
     }
+
     setIsSubmitting(false);
   };
 
@@ -157,6 +196,15 @@ export default function MatchDetail() {
         onNameChange={setInputName}
         onContactChange={setInputContact}
         onSubmit={handleSignUp}
+      />
+
+      {/* Alert Dialog */}
+      <AlertDialog
+        isOpen={alertDialog.isOpen}
+        title={alertDialog.title}
+        message={alertDialog.message}
+        variant={alertDialog.variant}
+        onClose={() => setAlertDialog(prev => ({ ...prev, isOpen: false }))}
       />
     </main>
   );
