@@ -14,6 +14,7 @@ export interface Slot {
   time: string;
   user_name: string | null;
   user_contact: string | null;
+  cancellation_requested: boolean;
 }
 
 export interface ServiceType {

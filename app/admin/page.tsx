@@ -12,6 +12,7 @@ import ServiceTypeManager from '@/components/admin/ServiceTypeManager';
 import StatusBadge from '@/components/ui/StatusBadge';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import AlertDialog from '@/components/ui/AlertDialog';
+import { adminRemoveUser } from '@/app/actions';
 
 export default function AdminPage() {
   const router = useRouter();
@@ -254,22 +255,52 @@ export default function AdminPage() {
   };
 
   const deleteSlot = async (slotId: number, userName: string | null) => {
-    const msg = userName 
-        ? `ACHTUNG: ${userName} ist eingetragen!\n\nWirklich löschen?` 
-        : "Diesen leeren Slot wirklich entfernen?";
-    
-    setConfirmDialog({
-      isOpen: true,
-      title: 'Slot löschen',
-      message: msg,
-      variant: 'danger',
-      onConfirm: async () => {
-        await supabase.from('slots').delete().eq('id', slotId);
-        setEditorSlots(current => current.filter(s => s.id !== slotId));
-        loadData();
-        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-      },
-    });
+    // If slot has a user, use adminRemoveUser (which sends email)
+    if (userName) {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Nutzer austragen',
+        message: `Nutzer informieren und austragen?\n\n${userName} wird per E-Mail benachrichtigt.`,
+        variant: 'danger',
+        onConfirm: async () => {
+          const result = await adminRemoveUser(slotId);
+          if (result.success) {
+            // Reload slots for this match
+            const { data } = await supabase.from('slots').select('*').eq('match_id', editingMatchId).order('id');
+            if (data) setEditorSlots(data);
+            await loadData();
+            setAlertDialog({
+              isOpen: true,
+              title: 'Erfolg',
+              message: 'Nutzer wurde ausgetragen und per E-Mail benachrichtigt.',
+              variant: 'success',
+            });
+          } else {
+            setAlertDialog({
+              isOpen: true,
+              title: 'Fehler',
+              message: result.error || 'Fehler beim Austragen des Nutzers.',
+              variant: 'error',
+            });
+          }
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        },
+      });
+    } else {
+      // Empty slot: just delete it
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Slot löschen',
+        message: 'Diesen leeren Slot wirklich entfernen?',
+        variant: 'danger',
+        onConfirm: async () => {
+          await supabase.from('slots').delete().eq('id', slotId);
+          setEditorSlots(current => current.filter(s => s.id !== slotId));
+          await loadData();
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        },
+      });
+    }
   };
 
   const handleFormChange = (field: string, value: string) => {
