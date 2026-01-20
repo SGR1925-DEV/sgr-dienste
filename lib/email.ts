@@ -115,7 +115,7 @@ export async function sendConfirmationEmail(
     await resend.emails.send({
       from: 'SG Ruwertal <noreply@sgruwertal.de>', // TODO: Update with your verified domain
       to,
-      subject: 'Bestätigung: Dein Dienst beim SG Ruwertal',
+      subject: 'Bestätigung: Dein Dienst bei der SG Ruwertal',
       html: getConfirmationEmailHTML(name, service, matchTitle, date, time, location),
       text: `
 Hallo ${name},
@@ -156,7 +156,7 @@ export async function sendCancellationEmail(
     await resend.emails.send({
       from: 'SG Ruwertal <noreply@sgruwertal.de>', // TODO: Update with your verified domain
       to,
-      subject: 'Stornierung: Dein Dienst beim SG Ruwertal',
+      subject: 'Stornierung: Dein Dienst bei der SG Ruwertal',
       html: getCancellationEmailHTML(name, service, matchTitle, date),
       text: `
 Hallo ${name},
