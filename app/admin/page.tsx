@@ -447,7 +447,7 @@ export default function AdminPage() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={(e) => deleteMatch(match.id, match.opponent, e)}
-                        className="p-2 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
+                        className="p-2 rounded-lg text-slate-400 active:text-red-500 hover:text-red-500 hover:bg-red-50 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 touch-manipulation"
                         title="Spiel löschen"
                       >
                         <Trash2 className="w-5 h-5" />
