@@ -6,7 +6,7 @@
 /**
  * Parst ein Datum aus dem Format "So, 06.12." oder "Mo, 14.12."
  * Gibt ein Date-Objekt zurück, das für Vergleiche verwendet werden kann
- * Behandelt Jahreswechsel korrekt: Dezember-Daten im Januar werden als vorheriges Jahr interpretiert
+ * Behandelt Jahreswechsel korrekt: Versucht das richtige Jahr zu ermitteln
  */
 export const parseMatchDate = (dateString: string): Date | null => {
   if (!dateString) return null;
@@ -24,36 +24,33 @@ export const parseMatchDate = (dateString: string): Date | null => {
   const currentYear = now.getFullYear();
   const currentDay = now.getDate();
   
+  // Teste mit aktuellem Jahr
+  let testDate = new Date(currentYear, month, day);
   let year = currentYear;
   
-  // Wenn der Monat größer ist als der aktuelle Monat (z.B. Dez=11 vs Jan=0),
-  // dann liegt das Datum wahrscheinlich im vorherigen Jahr
-  // (Ausnahme: wenn wir gerade in diesem Monat sind und der Tag noch nicht erreicht wurde)
-  if (month > currentMonth) {
-    year = currentYear - 1;
-  }
-  // Wenn der Monat kleiner ist (z.B. Jan=0 vs Nov=10),
-  // könnte es nächstes Jahr sein, wenn es sehr weit in der Zukunft liegt
-  else if (month < currentMonth) {
-    // Teste mit aktuellem Jahr
-    const testDate = new Date(currentYear, month, day);
-    const sixMonthsFromNow = new Date(now);
-    sixMonthsFromNow.setMonth(sixMonthsFromNow.getMonth() + 6);
-    
-    // Wenn das Datum mehr als 6 Monate in der Zukunft liegt, ist es wahrscheinlich nächstes Jahr
-    if (testDate > sixMonthsFromNow) {
+  // Wenn das Datum mit aktuellem Jahr in der Vergangenheit liegt,
+  // versuche nächstes Jahr
+  if (testDate < now) {
+    // Prüfe, ob es mit nächstes Jahr in der Zukunft liegt
+    const nextYearDate = new Date(currentYear + 1, month, day);
+    if (nextYearDate > now) {
       year = currentYear + 1;
+    } else {
+      // Wenn auch nächstes Jahr in der Vergangenheit liegt,
+      // könnte es vorheriges Jahr sein (z.B. wenn wir sehr spät im Jahr sind)
+      // Aber normalerweise sollten wir nicht so weit in die Vergangenheit planen
+      // Für Sicherheit: verwende nächstes Jahr, wenn das Datum sehr weit zurück liegt
+      const daysDiff = (now.getTime() - testDate.getTime()) / (1000 * 60 * 60 * 24);
+      if (daysDiff > 180) { // Mehr als 6 Monate in der Vergangenheit
+        year = currentYear + 1;
+      }
     }
-  }
-  // Wenn wir im gleichen Monat sind, prüfe den Tag
-  else {
-    if (day < currentDay) {
-      // Tag liegt in der Vergangenheit - könnte vorheriges Jahr sein, wenn wir am Anfang des Jahres sind
-      // Für Einfachheit: bleibt beim aktuellen Jahr (da wir im selben Monat sind)
-    }
+  } else {
+    // Datum mit aktuellem Jahr liegt in der Zukunft - das ist gut
+    year = currentYear;
   }
   
-  // Erstelle Date-Objekt mit dem ermittelten Jahr
+  // Erstelle finales Date-Objekt mit dem ermittelten Jahr
   return new Date(year, month, day);
 };
 
