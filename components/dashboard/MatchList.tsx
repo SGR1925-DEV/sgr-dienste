@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, MapPin } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Match } from '@/types';
 import { formatDisplayDate, getDateParts } from '@/lib/utils';
@@ -81,10 +81,16 @@ export default function MatchList({ matches, openCounts, isPast = false, title }
                       )}
                     </div>
                     <div className={clsx(
-                      "text-xs font-medium mt-1 flex items-center gap-2",
+                      "text-xs font-medium mt-1 flex items-center gap-2 flex-wrap",
                       isPast ? "text-slate-400" : "text-slate-400"
                     )}>
                       <span>{formatDisplayDate(match.date)} • {match.time} Uhr</span>
+                      {match.location && (
+                        <span className="flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          {match.location}
+                        </span>
+                      )}
                       {!isPast && openCount > 0 && (
                         <span className="text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded text-[10px]">
                           {openCount} offen
