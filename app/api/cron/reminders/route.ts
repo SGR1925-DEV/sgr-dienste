@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { Resend } from 'resend';
-import { formatDisplayDate } from '@/lib/utils';
-import { parseMatchDate } from '@/lib/utils';
+import { formatDisplayDate, parseMatchDate } from '@/lib/utils';
+import { isValidEmail } from '@/lib/email';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -35,15 +35,37 @@ export async function GET(request: NextRequest) {
     // Calculate date 2 days from now
     const targetDate = new Date(today);
     targetDate.setDate(targetDate.getDate() + 2);
+    targetDate.setHours(0, 0, 0, 0);
 
-    // Format target date as ISO string (YYYY-MM-DD)
-    const targetDateStr = targetDate.toISOString().split('T')[0];
-
-    // Fetch matches happening in 2 days
-    const { data: matches, error: matchesError } = await supabaseServer
+    // Fetch all matches (we need to parse dates to find matches in 2 days)
+    const { data: allMatches, error: matchesError } = await supabaseServer
       .from('matches')
-      .select('*')
-      .eq('date', targetDateStr);
+      .select('*');
+
+    if (matchesError) {
+      console.error('Error fetching matches:', matchesError);
+      return NextResponse.json({ error: 'Failed to fetch matches' }, { status: 500 });
+    }
+
+    if (!allMatches || allMatches.length === 0) {
+      return NextResponse.json({
+        success: true,
+        message: 'No matches found',
+        remindersSent: 0,
+      });
+    }
+
+    // Filter matches that are happening in 2 days
+    const matches = allMatches.filter(match => {
+      const matchDate = parseMatchDate(match.date);
+      if (!matchDate) return false;
+      
+      const matchDateOnly = new Date(matchDate.getFullYear(), matchDate.getMonth(), matchDate.getDate());
+      matchDateOnly.setHours(0, 0, 0, 0);
+      
+      // Check if match date equals target date (2 days from now)
+      return matchDateOnly.getTime() === targetDate.getTime();
+    });
 
     if (matchesError) {
       console.error('Error fetching matches:', matchesError);
@@ -84,6 +106,11 @@ export async function GET(request: NextRequest) {
       // Send reminder email for each slot
       for (const slot of slots) {
         if (!slot.user_contact || !slot.user_name) {
+          continue;
+        }
+
+        // Only send emails to valid email addresses
+        if (!isValidEmail(slot.user_contact)) {
           continue;
         }
 
