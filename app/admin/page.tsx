@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { Match, ServiceType, Slot, ServiceTypeMember } from '@/types';
@@ -18,6 +18,7 @@ export default function AdminPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'settings' | 'cancellations'>('upcoming');
+  const hasMountedRef = useRef(false);
   
   const [matches, setMatches] = useState<Match[]>([]);
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
@@ -72,7 +73,7 @@ export default function AdminPage() {
     init();
   }, [router]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     const [mRes, sRes, membersRes, slotsRes] = await Promise.all([
       supabase.from('matches').select('*').order('id', { ascending: false }),
       supabase.from('service_types').select('*').order('id'),
@@ -83,7 +84,15 @@ export default function AdminPage() {
     if (sRes.data) setServiceTypes(sRes.data);
     if (membersRes.data) setServiceTypeMembers(membersRes.data);
     if (slotsRes.data) setAllSlots(slotsRes.data);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+    loadData();
+  }, [activeTab, loadData]);
 
   const openCancellationSlots = useMemo(() => {
     return allSlots.filter(slot => slot.cancellation_requested);
