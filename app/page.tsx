@@ -181,10 +181,7 @@ export default function Dashboard() {
             openCount={openCounts[nextMatch.id] || 0}
             progress={getProgress(nextMatch.id)}
           />
-        )}
-
-        {/* HALL OF FAME */}
-        <HallOfFame slots={slots} />
+        )}        
 
         {/* LIST SECTION */}
         <MatchList 
@@ -193,6 +190,9 @@ export default function Dashboard() {
           isPast={activeTab === 'past'}
           title={activeTab === 'upcoming' ? 'Kommende Spiele' : 'Vergangene Spiele'}
         />
+
+        {/* HALL OF FAME */}
+        <HallOfFame slots={slots} />
 
         {/* FOOTER MIT LOGIN LINK */}
         <footer className="mt-12 mb-6 flex justify-center">
