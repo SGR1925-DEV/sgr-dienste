@@ -9,7 +9,7 @@ import { clsx } from 'clsx';
 import { parseMatchDate, downloadICalendar } from '@/lib/utils';
 import MatchHero from '@/components/dashboard/MatchHero';
 import MatchList from '@/components/dashboard/MatchList';
-import Leaderboard from '@/components/dashboard/Leaderboard';
+import HallOfFame from '@/components/dashboard/HallOfFame';
 
 type TabType = 'upcoming' | 'past';
 
@@ -183,6 +183,9 @@ export default function Dashboard() {
           />
         )}
 
+        {/* HALL OF FAME */}
+        <HallOfFame slots={slots} />
+
         {/* LIST SECTION */}
         <MatchList 
           matches={listMatches}
@@ -190,9 +193,6 @@ export default function Dashboard() {
           isPast={activeTab === 'past'}
           title={activeTab === 'upcoming' ? 'Kommende Spiele' : 'Vergangene Spiele'}
         />
-
-        {/* LEADERBOARD SECTION */}
-        <Leaderboard slots={slots} />
 
         {/* FOOTER MIT LOGIN LINK */}
         <footer className="mt-12 mb-6 flex justify-center">
