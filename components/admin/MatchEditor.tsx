@@ -19,7 +19,7 @@ interface MatchEditorProps {
   };
   editorSlots: Slot[];
   serviceTypes: ServiceType[];
-  newSlotConfig: { [key: string]: { count: number; time: string; durationMinutes?: number | null } };
+  newSlotConfig: { [key: string]: { count: number; time: string; startTime?: string; endTime?: string; durationMinutes?: number | null } };
   uniqueCategories: string[];
   onClose: () => void;
   onFormChange: (field: string, value: string) => void;
@@ -35,7 +35,7 @@ interface MatchEditorProps {
   durationUpdateSlotId?: number | null;
   adminActionSlotId?: number | null;
   adminActionType?: 'confirm' | 'reject' | null;
-  onSlotConfigChange: (category: string, field: 'count' | 'time' | 'durationMinutes', value: number | string | null) => void;
+  onSlotConfigChange: (category: string, field: 'count' | 'time' | 'durationMinutes' | 'startTime' | 'endTime', value: number | string | null) => void;
 }
 
 /**
@@ -66,6 +66,11 @@ export default function MatchEditor({
   onSlotConfigChange,
 }: MatchEditorProps) {
   const durationPresets = [30, 60, 90, 120, 150, 180];
+  const timeOptions = Array.from({ length: 48 }, (_, index) => {
+    const hours = Math.floor(index / 2).toString().padStart(2, '0');
+    const minutes = index % 2 === 0 ? '00' : '30';
+    return `${hours}:${minutes}`;
+  });
   const [durationDrafts, setDurationDrafts] = useState<Record<number, string>>({});
 
   useEffect(() => {
@@ -176,7 +181,7 @@ export default function MatchEditor({
 
             {uniqueCategories.map(catName => {
               const typeSlots = editorSlots.filter(s => s.category === catName);
-              const config = newSlotConfig[catName] || { count: 1, time: '14:00 - Ende', durationMinutes: null };
+              const config = newSlotConfig[catName] || { count: 1, time: '14:00 - Ende', startTime: '14:00', endTime: 'Ende', durationMinutes: null };
 
               return (
                 <div key={catName} className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
@@ -372,13 +377,29 @@ export default function MatchEditor({
                       >
                         {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}x</option>)}
                       </select>
-                      <input 
-                        type="text" 
-                        placeholder="Zeit" 
-                        className="flex-1 p-2 bg-white rounded-lg text-xs font-bold text-slate-900 border border-blue-100 outline-none placeholder:text-slate-400" 
-                        value={config.time} 
-                        onChange={(e) => onSlotConfigChange(catName, 'time', e.target.value)} 
-                      />
+                    <div className="flex-1 flex items-center gap-2">
+                      <select
+                        value={config.startTime ?? ''}
+                        onChange={(e) => onSlotConfigChange(catName, 'startTime', e.target.value)}
+                        className="flex-1 p-2 bg-white rounded-lg text-xs font-bold text-slate-900 border border-blue-100 outline-none"
+                      >
+                        <option value="">Start</option>
+                        {timeOptions.map(option => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                      <span className="text-xs font-bold text-slate-400">bis</span>
+                      <select
+                        value={config.endTime ?? 'Ende'}
+                        onChange={(e) => onSlotConfigChange(catName, 'endTime', e.target.value)}
+                        className="flex-1 p-2 bg-white rounded-lg text-xs font-bold text-slate-900 border border-blue-100 outline-none"
+                      >
+                        <option value="Ende">Ende</option>
+                        {timeOptions.map(option => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </div>
                       <button 
                         onClick={() => onAddSlotsToMatch(catName)}
                         className="bg-blue-600 text-white p-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors"
@@ -419,7 +440,7 @@ export default function MatchEditor({
                         Auto
                       </button>
                     </div>
-                    {config.time.toLowerCase().includes('ende') && (
+                    {(config.endTime ?? 'Ende').toLowerCase().includes('ende') && (
                       <span className="text-[10px] text-slate-500 block">
                         Standard: 120 Min (anpassbar)
                       </span>

@@ -30,7 +30,7 @@ export default function AdminPage() {
   const [editingMatchId, setEditingMatchId] = useState<number | null>(null); 
   const [editForm, setEditForm] = useState({ opponent: '', date: '', time: '14:30', location: 'Sportplatz Kasel', team: '1. Mannschaft' });
   const [editorSlots, setEditorSlots] = useState<Slot[]>([]); 
-  const [newSlotConfig, setNewSlotConfig] = useState<{ [key: string]: { count: number; time: string; durationMinutes?: number | null } }>({});
+  const [newSlotConfig, setNewSlotConfig] = useState<{ [key: string]: { count: number; time: string; startTime?: string; endTime?: string; durationMinutes?: number | null } }>({});
   const [adminAction, setAdminAction] = useState<{ slotId: number | null; type: 'confirm' | 'reject' | null }>({
     slotId: null,
     type: null,
@@ -225,7 +225,13 @@ export default function AdminPage() {
     // Config Reset
     const initialConfig: any = {};
     serviceTypes.forEach(t => { 
-      initialConfig[t.name] = { count: t.default_count || 1, time: '14:00 - Ende', durationMinutes: null }; 
+      initialConfig[t.name] = { 
+        count: t.default_count || 1, 
+        time: '14:00 - Ende', 
+        startTime: '14:00',
+        endTime: 'Ende',
+        durationMinutes: null,
+      }; 
     });
     setNewSlotConfig(initialConfig);
     
@@ -260,6 +266,12 @@ export default function AdminPage() {
     if (diff < 0) diff += 24 * 60;
 
     return diff > 0 ? diff : null;
+  };
+
+  const buildTimeRange = (startTime?: string, endTime?: string) => {
+    if (!startTime) return '';
+    const endLabel = endTime && endTime.trim().length > 0 ? endTime : 'Ende';
+    return `${startTime} - ${endLabel}`;
   };
 
   const reloadEditorSlots = async () => {
@@ -339,7 +351,7 @@ export default function AdminPage() {
     
     const config = newSlotConfig[category];
     const count = config?.count || 1;
-    const time = config?.time || '14:00 - Ende';
+    const time = buildTimeRange(config?.startTime, config?.endTime) || config?.time || '14:00 - Ende';
     const normalizedDuration = normalizeDurationMinutes(config?.durationMinutes ?? null);
     const autoDuration = normalizedDuration ?? calculateDurationFromTime(time);
     const durationMinutes = normalizeDurationMinutes(autoDuration);
@@ -524,15 +536,30 @@ export default function AdminPage() {
     setEditForm(prev => ({ ...prev, date: isoString }));
   };
 
-  const handleSlotConfigChange = (category: string, field: 'count' | 'time' | 'durationMinutes', value: number | string | null) => {
+  const handleSlotConfigChange = (category: string, field: 'count' | 'time' | 'durationMinutes' | 'startTime' | 'endTime', value: number | string | null) => {
     setNewSlotConfig(prev => {
       const current = prev[category];
       if (!current) return prev;
 
       const nextConfig = { ...current, [field]: value };
 
+      if (field === 'startTime' || field === 'endTime') {
+        const startTime = field === 'startTime' ? String(value) : current.startTime;
+        const endTime = field === 'endTime' ? String(value) : current.endTime;
+        nextConfig.startTime = startTime;
+        nextConfig.endTime = endTime;
+        nextConfig.time = buildTimeRange(startTime, endTime);
+      }
+
       if (field === 'time' && !current.durationMinutes) {
         const autoDuration = calculateDurationFromTime(String(value));
+        if (autoDuration) {
+          nextConfig.durationMinutes = autoDuration;
+        }
+      }
+
+      if ((field === 'startTime' || field === 'endTime') && !current.durationMinutes) {
+        const autoDuration = calculateDurationFromTime(nextConfig.time);
         if (autoDuration) {
           nextConfig.durationMinutes = autoDuration;
         }
