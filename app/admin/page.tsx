@@ -30,11 +30,12 @@ export default function AdminPage() {
   const [editingMatchId, setEditingMatchId] = useState<number | null>(null); 
   const [editForm, setEditForm] = useState({ opponent: '', date: '', time: '14:30', location: 'Sportplatz Kasel', team: '1. Mannschaft' });
   const [editorSlots, setEditorSlots] = useState<Slot[]>([]); 
-  const [newSlotConfig, setNewSlotConfig] = useState<{ [key: string]: { count: number, time: string } }>({});
+  const [newSlotConfig, setNewSlotConfig] = useState<{ [key: string]: { count: number; time: string; durationMinutes?: number | null } }>({});
   const [adminAction, setAdminAction] = useState<{ slotId: number | null; type: 'confirm' | 'reject' | null }>({
     slotId: null,
     type: null,
   });
+  const [durationUpdateSlotId, setDurationUpdateSlotId] = useState<number | null>(null);
 
   // Dialog State
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -223,10 +224,42 @@ export default function AdminPage() {
     
     // Config Reset
     const initialConfig: any = {};
-    serviceTypes.forEach(t => { initialConfig[t.name] = { count: t.default_count || 1, time: '14:00 - Ende' }; });
+    serviceTypes.forEach(t => { 
+      initialConfig[t.name] = { count: t.default_count || 1, time: '14:00 - Ende', durationMinutes: null }; 
+    });
     setNewSlotConfig(initialConfig);
     
     setIsEditorOpen(true);
+  };
+
+  const normalizeDurationMinutes = (value: number | null | undefined) => {
+    if (!value || value <= 0 || Number.isNaN(value)) return null;
+    return Math.round(value);
+  };
+
+  const calculateDurationFromTime = (time: string): number | null => {
+    if (!time || !time.trim()) return null;
+    if (time.toLowerCase().includes('ende')) {
+      return 120;
+    }
+
+    const times = time.match(/(\d{1,2}):(\d{2})/g);
+    if (!times || times.length < 2) return null;
+
+    const [start, end] = times;
+    const [startHours, startMinutes] = start.split(':').map(Number);
+    const [endHours, endMinutes] = end.split(':').map(Number);
+
+    if ([startHours, startMinutes, endHours, endMinutes].some(value => Number.isNaN(value))) {
+      return null;
+    }
+
+    const startTotal = startHours * 60 + startMinutes;
+    const endTotal = endHours * 60 + endMinutes;
+    let diff = endTotal - startTotal;
+    if (diff < 0) diff += 24 * 60;
+
+    return diff > 0 ? diff : null;
   };
 
   const reloadEditorSlots = async () => {
@@ -307,13 +340,17 @@ export default function AdminPage() {
     const config = newSlotConfig[category];
     const count = config?.count || 1;
     const time = config?.time || '14:00 - Ende';
+    const normalizedDuration = normalizeDurationMinutes(config?.durationMinutes ?? null);
+    const autoDuration = normalizedDuration ?? calculateDurationFromTime(time);
+    const durationMinutes = normalizeDurationMinutes(autoDuration);
 
     // Erstelle unabhängige Objekte für jeden Slot (statt Array.fill mit gleicher Referenz)
     const slotsToInsert = Array.from({ length: count }, () => ({ 
         match_id: editingMatchId, 
         category: category, 
         time: time, 
-        user_name: null 
+        user_name: null,
+        duration_minutes: durationMinutes,
     }));
     
     await supabase.from('slots').insert(slotsToInsert);
@@ -425,6 +462,59 @@ export default function AdminPage() {
     setAdminAction({ slotId: null, type: null });
   };
 
+  const updateSlotDurationInState = (slotId: number, durationMinutes: number | null) => {
+    setEditorSlots(current =>
+      current.map(slot => (slot.id === slotId ? { ...slot, duration_minutes: durationMinutes } : slot))
+    );
+    setAllSlots(current =>
+      current.map(slot => (slot.id === slotId ? { ...slot, duration_minutes: durationMinutes } : slot))
+    );
+  };
+
+  const handleUpdateSlotDuration = async (slotId: number, durationMinutes: number | null) => {
+    if (durationUpdateSlotId) return;
+
+    const normalizedDuration = normalizeDurationMinutes(durationMinutes);
+    const currentSlot = editorSlots.find(slot => slot.id === slotId);
+    if (currentSlot && currentSlot.duration_minutes === normalizedDuration) {
+      return;
+    }
+
+    setDurationUpdateSlotId(slotId);
+
+    const { error } = await supabase
+      .from('slots')
+      .update({ duration_minutes: normalizedDuration })
+      .eq('id', slotId);
+
+    if (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: 'Fehler beim Aktualisieren der Dauer.',
+        variant: 'error',
+      });
+    } else {
+      updateSlotDurationInState(slotId, normalizedDuration);
+    }
+
+    setDurationUpdateSlotId(null);
+  };
+
+  const handleAutoFillSlotDuration = async (slotId: number, time: string) => {
+    const autoDuration = calculateDurationFromTime(time);
+    if (!autoDuration) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Dauer nicht erkannt',
+        message: 'Die Zeit konnte nicht automatisch ausgewertet werden.',
+        variant: 'info',
+      });
+      return;
+    }
+    await handleUpdateSlotDuration(slotId, autoDuration);
+  };
+
   const handleFormChange = (field: string, value: string) => {
     setEditForm(prev => ({ ...prev, [field]: value }));
   };
@@ -434,13 +524,50 @@ export default function AdminPage() {
     setEditForm(prev => ({ ...prev, date: isoString }));
   };
 
-  const handleSlotConfigChange = (category: string, field: 'count' | 'time', value: number | string) => {
+  const handleSlotConfigChange = (category: string, field: 'count' | 'time' | 'durationMinutes', value: number | string | null) => {
+    setNewSlotConfig(prev => {
+      const current = prev[category];
+      if (!current) return prev;
+
+      const nextConfig = { ...current, [field]: value };
+
+      if (field === 'time' && !current.durationMinutes) {
+        const autoDuration = calculateDurationFromTime(String(value));
+        if (autoDuration) {
+          nextConfig.durationMinutes = autoDuration;
+        }
+      }
+
+      if (field === 'durationMinutes') {
+        nextConfig.durationMinutes = normalizeDurationMinutes(value as number | null);
+      }
+
+      return {
+        ...prev,
+        [category]: nextConfig,
+      };
+    });
+  };
+
+  const handleAutoDurationForConfig = (category: string) => {
+    const current = newSlotConfig[category];
+    if (!current) return;
+    const autoDuration = calculateDurationFromTime(current.time);
+    if (!autoDuration) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Dauer nicht erkannt',
+        message: 'Die Zeit konnte nicht automatisch ausgewertet werden.',
+        variant: 'info',
+      });
+      return;
+    }
     setNewSlotConfig(prev => ({
       ...prev,
       [category]: {
         ...prev[category],
-        [field]: value
-      }
+        durationMinutes: autoDuration,
+      },
     }));
   };
 
@@ -524,6 +651,10 @@ export default function AdminPage() {
           onDeleteSlot={deleteSlot}
           onConfirmCancellation={handleConfirmCancellation}
           onRejectCancellation={handleRejectCancellation}
+          onAutoDurationForConfig={handleAutoDurationForConfig}
+          onUpdateSlotDuration={handleUpdateSlotDuration}
+          onAutoFillSlotDuration={handleAutoFillSlotDuration}
+          durationUpdateSlotId={durationUpdateSlotId}
           adminActionSlotId={adminAction.slotId}
           adminActionType={adminAction.type}
           onSlotConfigChange={handleSlotConfigChange}

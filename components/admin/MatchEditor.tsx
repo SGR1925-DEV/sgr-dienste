@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { ArrowLeft, Settings, LayoutList, Save, Plus, Trash2, Users, Mail, Check, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { ServiceType, Slot } from '@/types';
@@ -18,7 +19,7 @@ interface MatchEditorProps {
   };
   editorSlots: Slot[];
   serviceTypes: ServiceType[];
-  newSlotConfig: { [key: string]: { count: number; time: string } };
+  newSlotConfig: { [key: string]: { count: number; time: string; durationMinutes?: number | null } };
   uniqueCategories: string[];
   onClose: () => void;
   onFormChange: (field: string, value: string) => void;
@@ -28,9 +29,13 @@ interface MatchEditorProps {
   onDeleteSlot: (slotId: number, userName: string | null) => void;
   onConfirmCancellation: (slotId: number) => void;
   onRejectCancellation: (slotId: number) => void;
+  onAutoDurationForConfig: (category: string) => void;
+  onUpdateSlotDuration: (slotId: number, durationMinutes: number | null) => void;
+  onAutoFillSlotDuration: (slotId: number, time: string) => void;
+  durationUpdateSlotId?: number | null;
   adminActionSlotId?: number | null;
   adminActionType?: 'confirm' | 'reject' | null;
-  onSlotConfigChange: (category: string, field: 'count' | 'time', value: number | string) => void;
+  onSlotConfigChange: (category: string, field: 'count' | 'time' | 'durationMinutes', value: number | string | null) => void;
 }
 
 /**
@@ -52,10 +57,24 @@ export default function MatchEditor({
   onDeleteSlot,
   onConfirmCancellation,
   onRejectCancellation,
+  onAutoDurationForConfig,
+  onUpdateSlotDuration,
+  onAutoFillSlotDuration,
+  durationUpdateSlotId = null,
   adminActionSlotId = null,
   adminActionType = null,
   onSlotConfigChange,
 }: MatchEditorProps) {
+  const durationPresets = [30, 60, 90, 120, 150, 180];
+  const [durationDrafts, setDurationDrafts] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    const nextDrafts: Record<number, string> = {};
+    editorSlots.forEach(slot => {
+      nextDrafts[slot.id] = slot.duration_minutes ? String(slot.duration_minutes) : '';
+    });
+    setDurationDrafts(nextDrafts);
+  }, [editorSlots]);
   return (
     <div className="min-h-screen bg-[#F2F2F7] pb-24">
       <header className="bg-white px-4 py-4 border-b border-slate-200 sticky top-0 z-20 flex justify-between items-center shadow-sm">
@@ -157,7 +176,7 @@ export default function MatchEditor({
 
             {uniqueCategories.map(catName => {
               const typeSlots = editorSlots.filter(s => s.category === catName);
-              const config = newSlotConfig[catName] || { count: 1, time: '14:00 - Ende' };
+              const config = newSlotConfig[catName] || { count: 1, time: '14:00 - Ende', durationMinutes: null };
 
               return (
                 <div key={catName} className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
@@ -175,6 +194,10 @@ export default function MatchEditor({
                       const isConfirming = adminActionType === 'confirm' && adminActionSlotId === slot.id;
                       const isRejecting = adminActionType === 'reject' && adminActionSlotId === slot.id;
                       const isActionPending = isConfirming || isRejecting;
+                      const isDurationUpdating = durationUpdateSlotId !== null;
+                      const durationDraft = durationDrafts[slot.id] ?? '';
+                      const presetValue = durationPresets.includes(Number(durationDraft)) ? durationDraft : '';
+                      const hasEnde = slot.time.toLowerCase().includes('ende');
                       
                       return (
                         <div 
@@ -230,6 +253,66 @@ export default function MatchEditor({
                               ) : (
                                 <span className="text-[10px] text-slate-400 italic">Offen</span>
                               )}
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <select
+                                  value={presetValue}
+                                  onChange={(e) => {
+                                    const nextValue = e.target.value;
+                                    setDurationDrafts(prev => ({ ...prev, [slot.id]: nextValue }));
+                                    const parsed = nextValue ? Number(nextValue) : null;
+                                    onUpdateSlotDuration(slot.id, parsed);
+                                  }}
+                                  disabled={isDurationUpdating}
+                                  className="p-1.5 bg-white rounded-lg text-[11px] font-bold text-slate-900 border border-slate-200 outline-none"
+                                >
+                                  <option value="">Dauer</option>
+                                  {durationPresets.map(preset => (
+                                    <option key={preset} value={preset}>{preset} Min</option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  inputMode="numeric"
+                                  placeholder="Min."
+                                  value={durationDraft}
+                                  onChange={(e) => {
+                                    setDurationDrafts(prev => ({ ...prev, [slot.id]: e.target.value }));
+                                  }}
+                                  onBlur={() => {
+                                    const raw = (durationDrafts[slot.id] ?? '').trim();
+                                    if (raw === '') {
+                                      onUpdateSlotDuration(slot.id, null);
+                                      return;
+                                    }
+                                    const parsed = Number(raw);
+                                    if (Number.isNaN(parsed)) {
+                                      setDurationDrafts(prev => ({ ...prev, [slot.id]: slot.duration_minutes ? String(slot.duration_minutes) : '' }));
+                                      return;
+                                    }
+                                    onUpdateSlotDuration(slot.id, parsed);
+                                  }}
+                                  disabled={isDurationUpdating}
+                                  className="w-20 p-1.5 bg-white rounded-lg text-[11px] font-bold text-slate-900 border border-slate-200 outline-none"
+                                />
+                                <button
+                                  onClick={() => onAutoFillSlotDuration(slot.id, slot.time)}
+                                  disabled={isDurationUpdating}
+                                  className={clsx(
+                                    "px-2 py-1.5 rounded-lg text-[11px] font-bold transition-colors",
+                                    isDurationUpdating
+                                      ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                      : "bg-blue-50 text-blue-700 hover:bg-blue-100 active:scale-95"
+                                  )}
+                                >
+                                  Auto
+                                </button>
+                              </div>
+                              {hasEnde && (
+                                <span className="text-[10px] text-slate-400 mt-1 block">
+                                  Standard: 120 Min (anpassbar)
+                                </span>
+                              )}
                             </div>
                           </div>
                           {hasCancellationRequest ? (
@@ -280,27 +363,67 @@ export default function MatchEditor({
                   </div>
 
                   {/* Add New Slots Controls */}
-                  <div className="p-3 bg-blue-50/30 border-t border-blue-100 flex gap-2">
-                    <select 
-                      className="w-16 p-2 bg-white rounded-lg text-xs font-bold text-slate-900 border border-blue-100 outline-none text-center" 
-                      value={config.count} 
-                      onChange={(e) => onSlotConfigChange(catName, 'count', parseInt(e.target.value))}
-                    >
-                      {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}x</option>)}
-                    </select>
-                    <input 
-                      type="text" 
-                      placeholder="Zeit" 
-                      className="flex-1 p-2 bg-white rounded-lg text-xs font-bold text-slate-900 border border-blue-100 outline-none placeholder:text-slate-400" 
-                      value={config.time} 
-                      onChange={(e) => onSlotConfigChange(catName, 'time', e.target.value)} 
-                    />
-                    <button 
-                      onClick={() => onAddSlotsToMatch(catName)}
-                      className="bg-blue-600 text-white p-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
+                  <div className="p-3 bg-blue-50/30 border-t border-blue-100 space-y-2">
+                    <div className="flex gap-2">
+                      <select 
+                        className="w-16 p-2 bg-white rounded-lg text-xs font-bold text-slate-900 border border-blue-100 outline-none text-center" 
+                        value={config.count} 
+                        onChange={(e) => onSlotConfigChange(catName, 'count', parseInt(e.target.value))}
+                      >
+                        {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}x</option>)}
+                      </select>
+                      <input 
+                        type="text" 
+                        placeholder="Zeit" 
+                        className="flex-1 p-2 bg-white rounded-lg text-xs font-bold text-slate-900 border border-blue-100 outline-none placeholder:text-slate-400" 
+                        value={config.time} 
+                        onChange={(e) => onSlotConfigChange(catName, 'time', e.target.value)} 
+                      />
+                      <button 
+                        onClick={() => onAddSlotsToMatch(catName)}
+                        className="bg-blue-600 text-white p-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={config.durationMinutes ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          onSlotConfigChange(catName, 'durationMinutes', value ? Number(value) : null);
+                        }}
+                        className="p-2 bg-white rounded-lg text-xs font-bold text-slate-900 border border-blue-100 outline-none"
+                      >
+                        <option value="">Dauer</option>
+                        {durationPresets.map(preset => (
+                          <option key={preset} value={preset}>{preset} Min</option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min={0}
+                        inputMode="numeric"
+                        placeholder="Min."
+                        value={config.durationMinutes ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          onSlotConfigChange(catName, 'durationMinutes', value ? Number(value) : null);
+                        }}
+                        className="w-20 p-2 bg-white rounded-lg text-xs font-bold text-slate-900 border border-blue-100 outline-none"
+                      />
+                      <button
+                        onClick={() => onAutoDurationForConfig(catName)}
+                        className="px-3 py-2 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                      >
+                        Auto
+                      </button>
+                    </div>
+                    {config.time.toLowerCase().includes('ende') && (
+                      <span className="text-[10px] text-slate-500 block">
+                        Standard: 120 Min (anpassbar)
+                      </span>
+                    )}
                   </div>
                 </div>
               );
