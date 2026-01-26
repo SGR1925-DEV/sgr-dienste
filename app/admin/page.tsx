@@ -93,6 +93,50 @@ export default function AdminPage() {
     return new Map(matches.map(match => [match.id, match]));
   }, [matches]);
 
+  const groupedCancellations = useMemo(() => {
+    const getSlotStartMinutes = (time: string) => {
+      const match = time.match(/(\d{1,2}):(\d{2})/);
+      if (!match) return Number.POSITIVE_INFINITY;
+      return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+    };
+
+    const groups = new Map<number, { matchId: number; match?: Match; matchDate: Date | null; slots: Slot[] }>();
+
+    openCancellationSlots.forEach(slot => {
+      const existing = groups.get(slot.match_id);
+      if (existing) {
+        existing.slots.push(slot);
+        return;
+      }
+
+      const match = matchById.get(slot.match_id);
+      groups.set(slot.match_id, {
+        matchId: slot.match_id,
+        match,
+        matchDate: match ? parseMatchDate(match.date) : null,
+        slots: [slot],
+      });
+    });
+
+    const groupArray = Array.from(groups.values());
+    groupArray.sort((a, b) => {
+      const dateA = a.matchDate ? a.matchDate.getTime() : Number.POSITIVE_INFINITY;
+      const dateB = b.matchDate ? b.matchDate.getTime() : Number.POSITIVE_INFINITY;
+      if (dateA !== dateB) return dateA - dateB;
+      return a.matchId - b.matchId;
+    });
+
+    return groupArray.map(group => ({
+      ...group,
+      slots: group.slots.slice().sort((a, b) => {
+        const timeA = getSlotStartMinutes(a.time);
+        const timeB = getSlotStartMinutes(b.time);
+        if (timeA !== timeB) return timeA - timeB;
+        return a.id - b.id;
+      }),
+    }));
+  }, [openCancellationSlots, matchById]);
+
   // Helper für Statistik in der Liste
   const getMatchStats = (matchId: number) => {
     const matchSlots = allSlots.filter(s => s.match_id === matchId);
@@ -541,80 +585,86 @@ export default function AdminPage() {
         )}
         {activeTab === 'cancellations' && (
           <div className="space-y-3 pb-10">
-            {openCancellationSlots.length === 0 ? (
+            {groupedCancellations.length === 0 ? (
               <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-center text-slate-500 text-sm">
                 Keine offenen Austragungen 🎉
               </div>
             ) : (
-              openCancellationSlots.map(slot => {
-                const match = matchById.get(slot.match_id);
-                const isConfirming = adminAction.type === 'confirm' && adminAction.slotId === slot.id;
-                const isRejecting = adminAction.type === 'reject' && adminAction.slotId === slot.id;
-                const isActionPending = isConfirming || isRejecting;
-
-                return (
-                  <div
-                    key={slot.id}
-                    className="bg-white p-4 rounded-2xl border border-orange-100 shadow-sm"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <div className="font-bold text-slate-800 text-sm">
-                            {match ? match.opponent : `Match #${slot.match_id}`}
-                          </div>
-                          {match?.team && (
-                            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
-                              {match.team}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] font-medium text-slate-400 mt-1">
-                          {match ? `${formatDisplayDate(match.date)} • ${match.time}` : 'Unbekanntes Spiel'}
-                        </div>
-                        <div className="text-[11px] font-bold text-slate-700 mt-2">
-                          {slot.category} • {slot.time}
-                        </div>
-                        <div className="text-[11px] text-slate-600 mt-2">
-                          {slot.user_name || 'Helfer'}
-                        </div>
-                        {slot.user_contact && (
-                          <a
-                            href={`mailto:${slot.user_contact}`}
-                            className="text-[11px] text-blue-600 font-semibold hover:underline"
-                          >
-                            {slot.user_contact}
-                          </a>
-                        )}
+              groupedCancellations.map(group => (
+                <div key={group.matchId} className="space-y-2">
+                  <div className="flex items-center justify-between px-2">
+                    <div>
+                      <div className="font-bold text-slate-800 text-sm">
+                        {group.match ? group.match.opponent : `Match #${group.matchId}`}
                       </div>
-                      <div className="flex flex-col gap-2">
-                        <button
-                          onClick={() => handleConfirmCancellation(slot.id)}
-                          disabled={isActionPending}
-                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
-                            isActionPending
-                              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                              : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 active:scale-95'
-                          }`}
-                        >
-                          {isConfirming ? 'Bestätige...' : 'Bestätigen'}
-                        </button>
-                        <button
-                          onClick={() => handleRejectCancellation(slot.id)}
-                          disabled={isActionPending}
-                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
-                            isActionPending
-                              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                              : 'bg-orange-50 text-orange-700 hover:bg-orange-100 active:scale-95'
-                          }`}
-                        >
-                          {isRejecting ? 'Lehne ab...' : 'Ablehnen'}
-                        </button>
+                      <div className="text-[11px] font-medium text-slate-400">
+                        {group.match ? `${formatDisplayDate(group.match.date)} • ${group.match.time}` : 'Unbekanntes Spiel'}
                       </div>
                     </div>
+                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                      {group.slots.length}
+                    </span>
                   </div>
-                );
-              })
+
+                  <div className="space-y-2">
+                    {group.slots.map(slot => {
+                      const isConfirming = adminAction.type === 'confirm' && adminAction.slotId === slot.id;
+                      const isRejecting = adminAction.type === 'reject' && adminAction.slotId === slot.id;
+                      const isActionPending = isConfirming || isRejecting;
+
+                      return (
+                        <div
+                          key={slot.id}
+                          className="bg-white p-4 rounded-2xl border border-orange-100 shadow-sm"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="text-[11px] font-bold text-slate-700">
+                                {slot.category} • {slot.time}
+                              </div>
+                              <div className="text-[11px] text-slate-600 mt-2">
+                                {slot.user_name || 'Helfer'}
+                              </div>
+                              {slot.user_contact && (
+                                <a
+                                  href={`mailto:${slot.user_contact}`}
+                                  className="text-[11px] text-blue-600 font-semibold hover:underline"
+                                >
+                                  {slot.user_contact}
+                                </a>
+                              )}
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              <button
+                                onClick={() => handleConfirmCancellation(slot.id)}
+                                disabled={isActionPending}
+                                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
+                                  isActionPending
+                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 active:scale-95'
+                                }`}
+                              >
+                                {isConfirming ? 'Bestätige...' : 'Bestätigen'}
+                              </button>
+                              <button
+                                onClick={() => handleRejectCancellation(slot.id)}
+                                disabled={isActionPending}
+                                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
+                                  isActionPending
+                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                    : 'bg-orange-50 text-orange-700 hover:bg-orange-100 active:scale-95'
+                                }`}
+                              >
+                                {isRejecting ? 'Lehne ab...' : 'Ablehnen'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
             )}
           </div>
         )}
