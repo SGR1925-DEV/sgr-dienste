@@ -9,7 +9,7 @@ import { ArrowLeft, Calendar, Clock, Download } from 'lucide-react';
 import { formatDisplayDate, downloadICalendar } from '@/lib/utils';
 import SlotList from '@/components/match/SlotList';
 import SignUpModal from '@/components/match/SignUpModal';
-import { signUpForSlot, requestCancellation } from '@/app/actions';
+import { bookSlot, requestCancellation } from '@/app/actions';
 import AlertDialog from '@/components/ui/AlertDialog';
 
 export default function MatchDetail() {
@@ -28,6 +28,7 @@ export default function MatchDetail() {
   const [inputName, setInputName] = useState('');
   const [inputContact, setInputContact] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submittingSlotId, setSubmittingSlotId] = useState<number | null>(null);
   
   // Alert Dialog State
   const [alertDialog, setAlertDialog] = useState({
@@ -65,7 +66,13 @@ export default function MatchDetail() {
   }, [matchId]);
 
   const handleSignUp = async () => {
-    if (!selectedSlot || inputName.length < 2) {
+    if (isSubmitting) return;
+
+    const normalizedName = inputName.trim();
+    const normalizedEmail = inputContact.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!selectedSlot || normalizedName.length < 2) {
       setAlertDialog({
         isOpen: true,
         title: 'Validierungsfehler',
@@ -75,76 +82,97 @@ export default function MatchDetail() {
       return;
     }
 
-    // Validate contact (email or phone)
-    if (!inputContact || inputContact.trim().length === 0) {
+    // Validate contact (email required)
+    if (!normalizedEmail || !emailRegex.test(normalizedEmail)) {
       setAlertDialog({
         isOpen: true,
-        title: 'Kontakt erforderlich',
-        message: 'Bitte gib deine E-Mail-Adresse oder Telefonnummer ein.',
+        title: 'E-Mail erforderlich',
+        message: 'Bitte gib eine gültige E-Mail-Adresse ein.',
         variant: 'error',
       });
       return;
     }
 
     setIsSubmitting(true);
+    setSubmittingSlotId(selectedSlot.id);
 
-    const result = await signUpForSlot(selectedSlot.id, inputName, inputContact);
+    try {
+      const result = await bookSlot(selectedSlot.id, normalizedName, normalizedEmail);
 
-    if (result.success) {
-      // Reload data to get updated slot status
-      const { data: slotsData } = await supabase.from('slots').select('*').eq('match_id', matchId).order('id');
-      if (slotsData) setSlots(slotsData);
+      if (result.success) {
+        // Reload data to get updated slot status
+        const { data: slotsData } = await supabase.from('slots').select('*').eq('match_id', matchId).order('id');
+        if (slotsData) setSlots(slotsData);
 
-      setAlertDialog({
-        isOpen: true,
-        title: 'Erfolgreich eingetragen!',
-        message: inputContact.includes('@') 
-          ? 'Du hast dich erfolgreich eingetragen. Eine Bestätigungs-E-Mail wurde an dich gesendet.'
-          : 'Du hast dich erfolgreich eingetragen.',
-        variant: 'success',
-      });
+        setAlertDialog({
+          isOpen: true,
+          title: 'Erfolgreich eingetragen!',
+          message: 'Du hast dich erfolgreich eingetragen. Eine Bestätigungs-E-Mail wurde an dich gesendet.',
+          variant: 'success',
+        });
 
-      setSelectedSlot(null);
-      setInputName('');
-      setInputContact('');
-    } else {
+        setSelectedSlot(null);
+        setInputName('');
+        setInputContact('');
+      } else {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Fehler',
+          message: result.error || 'Fehler beim Speichern. Bitte erneut versuchen.',
+          variant: 'error',
+        });
+      }
+    } catch (error) {
       setAlertDialog({
         isOpen: true,
         title: 'Fehler',
-        message: result.error || 'Fehler beim Speichern. Bitte erneut versuchen.',
+        message: 'Fehler beim Speichern. Bitte erneut versuchen.',
         variant: 'error',
       });
+    } finally {
+      setIsSubmitting(false);
+      setSubmittingSlotId(null);
     }
-
-    setIsSubmitting(false);
   };
 
   const handleRequestCancellation = async (slot: Slot) => {
+    if (isSubmitting) return;
     setIsSubmitting(true);
+    setSubmittingSlotId(slot.id);
 
-    const result = await requestCancellation(slot.id);
+    try {
+      const result = await requestCancellation(slot.id);
 
-    if (result.success) {
-      // Reload data to get updated slot status
-      const { data: slotsData } = await supabase.from('slots').select('*').eq('match_id', matchId).order('id');
-      if (slotsData) setSlots(slotsData);
+      if (result.success) {
+        // Reload data to get updated slot status
+        const { data: slotsData } = await supabase.from('slots').select('*').eq('match_id', matchId).order('id');
+        if (slotsData) setSlots(slotsData);
 
-      setAlertDialog({
-        isOpen: true,
-        title: 'Absage beantragt',
-        message: 'Deine Absage wurde beantragt. Ein Administrator wird sich darum kümmern.',
-        variant: 'success',
-      });
-    } else {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Austragung beantragt',
+          message: 'Deine Austragung wurde beantragt. Ein Administrator wird sich darum kümmern.',
+          variant: 'success',
+        });
+      } else {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Fehler',
+          message: result.error || 'Fehler beim Beantragen der Austragung. Bitte erneut versuchen.',
+          variant: 'error',
+        });
+      }
+    } catch (error) {
       setAlertDialog({
         isOpen: true,
         title: 'Fehler',
-        message: result.error || 'Fehler beim Beantragen der Absage. Bitte erneut versuchen.',
+        message: 'Fehler beim Beantragen der Austragung. Bitte erneut versuchen.',
         variant: 'error',
       });
+    } finally {
+      setIsSubmitting(false);
+      setSubmittingSlotId(null);
     }
-
-    setIsSubmitting(false);
   };
 
   if (loading) return (
@@ -209,7 +237,13 @@ export default function MatchDetail() {
       </div>
 
       {/* Slots Liste */}
-      <SlotList slots={slots} onSlotClick={setSelectedSlot} onRequestCancellation={handleRequestCancellation} />
+      <SlotList
+        slots={slots}
+        onSlotClick={setSelectedSlot}
+        onRequestCancellation={handleRequestCancellation}
+        isSubmitting={isSubmitting}
+        submittingSlotId={submittingSlotId}
+      />
 
       {/* Eintragen Modal */}
       <SignUpModal

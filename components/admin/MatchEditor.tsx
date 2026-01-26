@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Settings, LayoutList, Save, Plus, Trash2, Users, Phone, UserCircle, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Settings, LayoutList, Save, Plus, Trash2, Users, Mail, Check, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { ServiceType, Slot } from '@/types';
 import { parseDisplayDateToISO, formatDateForDisplay, isoStringToDate } from '@/lib/utils';
@@ -26,6 +26,10 @@ interface MatchEditorProps {
   onSaveMatchMetadata: () => void;
   onAddSlotsToMatch: (category: string) => void;
   onDeleteSlot: (slotId: number, userName: string | null) => void;
+  onConfirmCancellation: (slotId: number) => void;
+  onRejectCancellation: (slotId: number) => void;
+  adminActionSlotId?: number | null;
+  adminActionType?: 'confirm' | 'reject' | null;
   onSlotConfigChange: (category: string, field: 'count' | 'time', value: number | string) => void;
 }
 
@@ -46,6 +50,10 @@ export default function MatchEditor({
   onSaveMatchMetadata,
   onAddSlotsToMatch,
   onDeleteSlot,
+  onConfirmCancellation,
+  onRejectCancellation,
+  adminActionSlotId = null,
+  adminActionType = null,
   onSlotConfigChange,
 }: MatchEditorProps) {
   return (
@@ -164,6 +172,9 @@ export default function MatchEditor({
                   <div className="divide-y divide-slate-50">
                     {typeSlots.map(slot => {
                       const hasCancellationRequest = slot.cancellation_requested;
+                      const isConfirming = adminActionType === 'confirm' && adminActionSlotId === slot.id;
+                      const isRejecting = adminActionType === 'reject' && adminActionSlotId === slot.id;
+                      const isActionPending = isConfirming || isRejecting;
                       
                       return (
                         <div 
@@ -185,7 +196,7 @@ export default function MatchEditor({
                                 <div className="text-xs font-bold text-slate-900">{slot.time}</div>
                                 {hasCancellationRequest && (
                                   <span className="text-[10px] font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200">
-                                    Absage Wunsch!
+                                    Austragung angefragt
                                   </span>
                                 )}
                               </div>
@@ -206,9 +217,9 @@ export default function MatchEditor({
                                   </span>
                                   {slot.user_contact && (
                                     <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
-                                      <Phone className="w-3 h-3 text-slate-400" /> 
+                                      <Mail className="w-3 h-3 text-slate-400" /> 
                                       <a 
-                                        href={slot.user_contact.includes('@') ? `mailto:${slot.user_contact}` : `tel:${slot.user_contact}`}
+                                        href={`mailto:${slot.user_contact}`}
                                         className="hover:underline hover:text-blue-600"
                                       >
                                         {slot.user_contact}
@@ -221,14 +232,47 @@ export default function MatchEditor({
                               )}
                             </div>
                           </div>
-                          {slot.user_name && (
-                            <button 
-                              onClick={() => onDeleteSlot(slot.id, slot.user_name)}
-                              className="text-slate-500 active:text-red-500 hover:text-red-500 active:bg-red-50 hover:bg-red-50 p-2 rounded-lg transition-colors touch-manipulation flex-shrink-0"
-                              title="Nutzer informieren und austragen"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                          {hasCancellationRequest ? (
+                            <div className="flex flex-col gap-2 flex-shrink-0">
+                              <button 
+                                onClick={() => onConfirmCancellation(slot.id)}
+                                disabled={isActionPending}
+                                className={clsx(
+                                  "px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors",
+                                  isActionPending
+                                    ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                    : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 active:scale-95"
+                                )}
+                                title="Austragung bestätigen"
+                              >
+                                <Check className="w-3.5 h-3.5 inline mr-1" />
+                                {isConfirming ? 'Bestätige...' : 'Bestätigen'}
+                              </button>
+                              <button 
+                                onClick={() => onRejectCancellation(slot.id)}
+                                disabled={isActionPending}
+                                className={clsx(
+                                  "px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors",
+                                  isActionPending
+                                    ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                    : "bg-orange-50 text-orange-700 hover:bg-orange-100 active:scale-95"
+                                )}
+                                title="Anfrage ablehnen"
+                              >
+                                <X className="w-3.5 h-3.5 inline mr-1" />
+                                {isRejecting ? 'Lehne ab...' : 'Ablehnen'}
+                              </button>
+                            </div>
+                          ) : (
+                            slot.user_name && (
+                              <button 
+                                onClick={() => onDeleteSlot(slot.id, slot.user_name)}
+                                className="text-slate-500 active:text-red-500 hover:text-red-500 active:bg-red-50 hover:bg-red-50 p-2 rounded-lg transition-colors touch-manipulation flex-shrink-0"
+                                title="Nutzer informieren und austragen"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )
                           )}
                         </div>
                       );

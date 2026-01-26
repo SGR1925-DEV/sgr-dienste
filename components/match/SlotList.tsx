@@ -19,13 +19,21 @@ interface SlotListProps {
   slots: Slot[];
   onSlotClick: (slot: Slot) => void;
   onRequestCancellation?: (slot: Slot) => void;
+  isSubmitting?: boolean;
+  submittingSlotId?: number | null;
 }
 
 /**
  * SlotList Component
  * Displays service slots grouped by category
  */
-export default function SlotList({ slots, onSlotClick, onRequestCancellation }: SlotListProps) {
+export default function SlotList({
+  slots,
+  onSlotClick,
+  onRequestCancellation,
+  isSubmitting = false,
+  submittingSlotId = null,
+}: SlotListProps) {
   const categories = Array.from(new Set(slots.map(s => s.category)));
 
   return (
@@ -44,8 +52,9 @@ export default function SlotList({ slots, onSlotClick, onRequestCancellation }: 
 
           <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100/50">
             {slots.filter(s => s.category === cat).map((slot, idx) => {
-              const isTaken = !!slot.user_name;
+              const isTaken = !!slot.user_contact || !!slot.user_name;
               const hasCancellationRequest = slot.cancellation_requested;
+              const isRequesting = isSubmitting && submittingSlotId === slot.id;
               
               return (
                 <div 
@@ -68,10 +77,10 @@ export default function SlotList({ slots, onSlotClick, onRequestCancellation }: 
                     <div className="flex-1">
                       {isTaken ? (
                         <div className="flex flex-col gap-1">
-                          <span className="text-sm font-bold text-slate-900">{slot.user_name}</span>
+                          <span className="text-sm font-bold text-slate-900">{slot.user_name || 'Belegt'}</span>
                           {hasCancellationRequest ? (
                             <span className="text-[10px] font-medium text-orange-600 flex items-center gap-1">
-                              <XCircle className="w-3 h-3" /> Stornierung angefragt
+                              <XCircle className="w-3 h-3" /> Austragung angefragt
                             </span>
                           ) : (
                             <span className="text-[10px] font-medium text-emerald-600 flex items-center gap-1">
@@ -97,15 +106,19 @@ export default function SlotList({ slots, onSlotClick, onRequestCancellation }: 
                             onRequestCancellation(slot);
                           }
                         }}
-                        disabled={hasCancellationRequest}
+                        disabled={hasCancellationRequest || isRequesting}
                         className={clsx(
                           "px-3 py-1.5 rounded-lg text-xs font-bold transition-colors",
-                          hasCancellationRequest
+                          hasCancellationRequest || isRequesting
                             ? "bg-slate-100 text-slate-400 cursor-not-allowed"
                             : "bg-orange-50 text-orange-600 hover:bg-orange-100 active:scale-95"
                         )}
                       >
-                        {hasCancellationRequest ? 'Angefragt' : 'Absage beantragen'}
+                        {hasCancellationRequest
+                          ? 'Angefragt'
+                          : isRequesting
+                            ? 'Wird beantragt...'
+                            : 'Austragen beantragen'}
                       </button>
                     )}
                     {isTaken ? (

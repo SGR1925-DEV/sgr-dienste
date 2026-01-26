@@ -12,7 +12,7 @@ import ServiceTypeManager from '@/components/admin/ServiceTypeManager';
 import StatusBadge from '@/components/ui/StatusBadge';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import AlertDialog from '@/components/ui/AlertDialog';
-import { adminRemoveUser } from '@/app/actions';
+import { adminConfirmCancellation, adminRejectCancellation, adminRemoveUser } from '@/app/actions';
 
 export default function AdminPage() {
   const router = useRouter();
@@ -30,6 +30,10 @@ export default function AdminPage() {
   const [editForm, setEditForm] = useState({ opponent: '', date: '', time: '14:30', location: 'Sportplatz Kasel', team: '1. Mannschaft' });
   const [editorSlots, setEditorSlots] = useState<Slot[]>([]); 
   const [newSlotConfig, setNewSlotConfig] = useState<{ [key: string]: { count: number, time: string } }>({});
+  const [adminAction, setAdminAction] = useState<{ slotId: number | null; type: 'confirm' | 'reject' | null }>({
+    slotId: null,
+    type: null,
+  });
 
   // Dialog State
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -85,7 +89,7 @@ export default function AdminPage() {
   const getMatchStats = (matchId: number) => {
     const matchSlots = allSlots.filter(s => s.match_id === matchId);
     const total = matchSlots.length;
-    const filled = matchSlots.filter(s => s.user_name).length;
+    const filled = matchSlots.filter(s => s.user_contact || s.user_name).length;
     const open = total - filled;
     return { total, filled, open };
   };
@@ -162,6 +166,12 @@ export default function AdminPage() {
     setNewSlotConfig(initialConfig);
     
     setIsEditorOpen(true);
+  };
+
+  const reloadEditorSlots = async () => {
+    if (!editingMatchId) return;
+    const { data } = await supabase.from('slots').select('*').eq('match_id', editingMatchId).order('id');
+    if (data) setEditorSlots(data);
   };
 
   const saveMatchMetadata = async () => {
@@ -266,8 +276,7 @@ export default function AdminPage() {
           const result = await adminRemoveUser(slotId);
           if (result.success) {
             // Reload slots for this match
-            const { data } = await supabase.from('slots').select('*').eq('match_id', editingMatchId).order('id');
-            if (data) setEditorSlots(data);
+            await reloadEditorSlots();
             await loadData();
             setAlertDialog({
               isOpen: true,
@@ -301,6 +310,58 @@ export default function AdminPage() {
         },
       });
     }
+  };
+
+  const handleConfirmCancellation = async (slotId: number) => {
+    if (adminAction.type) return;
+    setAdminAction({ slotId, type: 'confirm' });
+
+    const result = await adminConfirmCancellation(slotId);
+    if (result.success) {
+      await reloadEditorSlots();
+      await loadData();
+      setAlertDialog({
+        isOpen: true,
+        title: 'Austragung bestätigt',
+        message: 'Der Slot ist jetzt wieder frei.',
+        variant: 'success',
+      });
+    } else {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: result.error || 'Fehler beim Bestätigen der Austragung.',
+        variant: 'error',
+      });
+    }
+
+    setAdminAction({ slotId: null, type: null });
+  };
+
+  const handleRejectCancellation = async (slotId: number) => {
+    if (adminAction.type) return;
+    setAdminAction({ slotId, type: 'reject' });
+
+    const result = await adminRejectCancellation(slotId);
+    if (result.success) {
+      await reloadEditorSlots();
+      await loadData();
+      setAlertDialog({
+        isOpen: true,
+        title: 'Anfrage abgelehnt',
+        message: 'Die Austragungsanfrage wurde zurückgesetzt.',
+        variant: 'success',
+      });
+    } else {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: result.error || 'Fehler beim Ablehnen der Anfrage.',
+        variant: 'error',
+      });
+    }
+
+    setAdminAction({ slotId: null, type: null });
   };
 
   const handleFormChange = (field: string, value: string) => {
@@ -400,6 +461,10 @@ export default function AdminPage() {
           onSaveMatchMetadata={saveMatchMetadata}
           onAddSlotsToMatch={addSlotsToMatch}
           onDeleteSlot={deleteSlot}
+          onConfirmCancellation={handleConfirmCancellation}
+          onRejectCancellation={handleRejectCancellation}
+          adminActionSlotId={adminAction.slotId}
+          adminActionType={adminAction.type}
           onSlotConfigChange={handleSlotConfigChange}
         />
       ) : (
