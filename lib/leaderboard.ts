@@ -2,9 +2,10 @@
 
 import { supabaseServer } from '@/lib/supabase-server';
 import { LeaderboardRow } from '@/types';
+import { parseMatchDate } from '@/lib/utils';
 
-// TODO: Matches-Tabellenfeld fuer echtes Datum/Season hinterlegen (z.B. match_date/kickoff_at).
-const MATCH_DATE_FIELD = 'match_date';
+// Matches-Tabellenfeld fuer das Spiel-Datum (laut Schema: "date" als Text).
+const MATCH_DATE_FIELD = 'date';
 
 const sortLeaderboard = (rows: LeaderboardRow[]) =>
   rows.sort((a, b) => {
@@ -49,8 +50,8 @@ export async function getLeaderboardByDateRange(startDate: Date, endDate: Date, 
 
     if (!helperId || !duration || duration <= 0 || !matchDateValue) return;
 
-    const matchDate = new Date(matchDateValue);
-    if (Number.isNaN(matchDate.getTime())) return;
+    const matchDate = matchDateValue ? parseMatchDate(matchDateValue) : null;
+    if (!matchDate) return;
     if (matchDate < startDate || matchDate > endDate) return;
 
     const existing = rows.get(helperId);
