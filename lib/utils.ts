@@ -6,7 +6,7 @@
 /**
  * Parst ein Datum aus dem Format "So, 06.12." oder "Mo, 14.12."
  * Gibt ein Date-Objekt zurück, das für Vergleiche verwendet werden kann
- * Behandelt Jahreswechsel korrekt: Versucht das richtige Jahr zu ermitteln
+ * Behandelt Jahreswechsel mit Heuristik (ohne Jahresinfo im String)
  */
 export const parseMatchDate = (dateString: string): Date | null => {
   if (!dateString) return null;
@@ -20,38 +20,40 @@ export const parseMatchDate = (dateString: string): Date | null => {
   const month = monthNum - 1; // Monate sind 0-indexiert in JS Date (0-11)
   
   const now = new Date();
-  const currentMonth = now.getMonth(); // 0-11
+  now.setHours(0, 0, 0, 0);
   const currentYear = now.getFullYear();
-  const currentDay = now.getDate();
   
-  // Teste mit aktuellem Jahr
-  let testDate = new Date(currentYear, month, day);
-  let year = currentYear;
-  
-  // Wenn das Datum mit aktuellem Jahr in der Vergangenheit liegt,
-  // versuche nächstes Jahr
-  if (testDate < now) {
-    // Prüfe, ob es mit nächstes Jahr in der Zukunft liegt
-    const nextYearDate = new Date(currentYear + 1, month, day);
-    if (nextYearDate > now) {
-      year = currentYear + 1;
-    } else {
-      // Wenn auch nächstes Jahr in der Vergangenheit liegt,
-      // könnte es vorheriges Jahr sein (z.B. wenn wir sehr spät im Jahr sind)
-      // Aber normalerweise sollten wir nicht so weit in die Vergangenheit planen
-      // Für Sicherheit: verwende nächstes Jahr, wenn das Datum sehr weit zurück liegt
-      const daysDiff = (now.getTime() - testDate.getTime()) / (1000 * 60 * 60 * 24);
-      if (daysDiff > 180) { // Mehr als 6 Monate in der Vergangenheit
-        year = currentYear + 1;
-      }
-    }
-  } else {
-    // Datum mit aktuellem Jahr liegt in der Zukunft - das ist gut
-    year = currentYear;
+  const baseDate = new Date(currentYear, month, day);
+  const dayMs = 1000 * 60 * 60 * 24;
+  const diffDays = (baseDate.getTime() - now.getTime()) / dayMs;
+
+  // Wenn das Datum sehr weit in der Zukunft liegt, ist es wahrscheinlich letztes Jahr gewesen.
+  // Wenn es sehr weit in der Vergangenheit liegt, ist es wahrscheinlich nächstes Jahr.
+  const thresholdDays = 270; // ca. 9 Monate
+  if (diffDays > thresholdDays) {
+    return new Date(currentYear - 1, month, day);
   }
-  
-  // Erstelle finales Date-Objekt mit dem ermittelten Jahr
-  return new Date(year, month, day);
+  if (diffDays < -thresholdDays) {
+    return new Date(currentYear + 1, month, day);
+  }
+
+  return baseDate;
+};
+
+/**
+ * Liefert ein Date-Objekt aus match_date (ISO) oder legacy date string.
+ */
+export const getMatchDateForComparison = (
+  matchDate?: string | null,
+  legacyDate?: string | null
+): Date | null => {
+  if (matchDate) {
+    return isoStringToDate(matchDate) || null;
+  }
+  if (legacyDate) {
+    return parseMatchDate(legacyDate);
+  }
+  return null;
 };
 
 /**
@@ -93,6 +95,22 @@ export const formatDisplayDate = (dateString: string): string => {
   
   // Falls nichts geparst werden kann, gib bereinigte Version zurück
   return cleaned.replace(/\.$/, '') + '.';
+};
+
+/**
+ * Liefert Anzeige-Datum aus match_date (ISO) oder legacy date string.
+ */
+export const getMatchDisplayDate = (
+  matchDate?: string | null,
+  legacyDate?: string | null
+): string => {
+  if (matchDate) {
+    return formatDateForDisplay(matchDate);
+  }
+  if (legacyDate) {
+    return formatDisplayDate(legacyDate);
+  }
+  return '';
 };
 
 /**
@@ -224,6 +242,7 @@ export const generateICalendar = (matches: Array<{
   id: number;
   opponent: string;
   date: string;
+  match_date?: string | null;
   time: string;
   location: string;
   team?: string | null;
@@ -286,7 +305,7 @@ export const generateICalendar = (matches: Array<{
   ics += 'METHOD:PUBLISH\r\n';
 
   matches.forEach(match => {
-    const matchDate = parseMatchDate(match.date);
+    const matchDate = match.match_date ? isoStringToDate(match.match_date) : parseMatchDate(match.date);
     if (!matchDate) return;
 
     const dtStart = formatDateTime(matchDate, match.time);

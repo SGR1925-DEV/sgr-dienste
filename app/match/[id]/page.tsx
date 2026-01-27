@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { Match, SlotPublic, ServiceType, ServiceTypeMember } from '@/types';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Calendar, Clock, Download } from 'lucide-react';
-import { formatDisplayDate, downloadICalendar } from '@/lib/utils';
+import { formatDisplayDate, downloadICalendar, getMatchDisplayDate } from '@/lib/utils';
 import SlotList from '@/components/match/SlotList';
 import SignUpModal from '@/components/match/SignUpModal';
 import CancellationModal from '@/components/match/CancellationModal';
@@ -43,8 +43,18 @@ export default function MatchDetail() {
 
   useEffect(() => {
     const fetchData = async () => {
-      const { data: matchData } = await supabase.from('matches').select('*').eq('id', matchId).single();
-      if (matchData) setMatch(matchData);
+      const { data: matchData } = await supabase
+        .from('matches')
+        .select('*')
+        .eq('id', matchId)
+        .is('deleted_at', null)
+        .single();
+      if (!matchData) {
+        setMatch(null);
+        setLoading(false);
+        return;
+      }
+      setMatch(matchData);
       
       const { data: slotsData } = await supabase.from('slots_public').select('*').eq('match_id', matchId).order('id');
       if (slotsData) setSlots(slotsData);
@@ -238,7 +248,7 @@ export default function MatchDetail() {
 
         <div className="mt-4 flex items-center gap-3 bg-white/60 backdrop-blur-md px-4 py-2 rounded-full border border-black/5 shadow-sm">
           <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 uppercase tracking-wide">
-            <Calendar className="w-3.5 h-3.5 text-blue-500" /> {formatDisplayDate(match.date)}
+            <Calendar className="w-3.5 h-3.5 text-blue-500" /> {getMatchDisplayDate(match.match_date, match.date)}
           </div>
           <div className="w-1 h-1 bg-slate-300 rounded-full" />
           <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 uppercase tracking-wide">

@@ -6,7 +6,7 @@ import { fetchAdmin } from '@/lib/admin-client';
 import { useRouter } from 'next/navigation';
 import { Match, ServiceType, Slot, ServiceTypeMember } from '@/types';
 import { Plus, Settings, Trash2 } from 'lucide-react';
-import { parseDisplayDateToISO, formatDateForDisplay, formatDisplayDate, dateToISOString, parseMatchDate } from '@/lib/utils';
+import { parseDisplayDateToISO, formatDateForDisplay, formatDisplayDate, dateToISOString, getMatchDateForComparison, getMatchDisplayDate } from '@/lib/utils';
 import AdminHeader from '@/components/admin/AdminHeader';
 import MatchEditor from '@/components/admin/MatchEditor';
 import ServiceTypeManager from '@/components/admin/ServiceTypeManager';
@@ -146,7 +146,7 @@ export default function AdminPage() {
       groups.set(slot.match_id, {
         matchId: slot.match_id,
         match,
-        matchDate: match ? parseMatchDate(match.date) : null,
+        matchDate: match ? getMatchDateForComparison(match.match_date, match.date) : null,
         slots: [slot],
       });
     });
@@ -188,7 +188,7 @@ export default function AdminPage() {
     const past: Match[] = [];
     
     activeMatches.forEach(match => {
-      const matchDate = parseMatchDate(match.date);
+      const matchDate = getMatchDateForComparison(match.match_date, match.date);
       if (!matchDate) {
         // Falls Datum nicht geparst werden kann, behandle es als zukünftig
         upcoming.push(match);
@@ -206,16 +206,16 @@ export default function AdminPage() {
     
     // Sortiere kommende Spiele aufsteigend (nächstes zuerst)
     upcoming.sort((a, b) => {
-      const dateA = parseMatchDate(a.date);
-      const dateB = parseMatchDate(b.date);
+      const dateA = getMatchDateForComparison(a.match_date, a.date);
+      const dateB = getMatchDateForComparison(b.match_date, b.date);
       if (!dateA || !dateB) return 0;
       return dateA.getTime() - dateB.getTime();
     });
     
     // Sortiere vergangene Spiele absteigend (neuestes zuerst)
     past.sort((a, b) => {
-      const dateA = parseMatchDate(a.date);
-      const dateB = parseMatchDate(b.date);
+      const dateA = getMatchDateForComparison(a.match_date, a.date);
+      const dateB = getMatchDateForComparison(b.match_date, b.date);
       if (!dateA || !dateB) return 0;
       return dateB.getTime() - dateA.getTime();
     });
@@ -226,7 +226,7 @@ export default function AdminPage() {
   const openEditor = async (match?: Match) => {
     if (match) {
       setEditingMatchId(match.id);
-      const isoDate = parseDisplayDateToISO(match.date);
+      const isoDate = match.match_date || parseDisplayDateToISO(match.date);
       
       setEditForm({ 
         opponent: match.opponent, 
@@ -344,9 +344,15 @@ export default function AdminPage() {
       return;
     }
 
+    const kickoffAt = editForm.date && editForm.time
+      ? `${editForm.date}T${editForm.time}:00`
+      : null;
+
     const payload = { 
         opponent: editForm.opponent, 
         date: formattedDate,
+        match_date: editForm.date || null,
+        kickoff_at: kickoffAt,
         time: editForm.time, 
         location: editForm.location,
         team: editForm.team
@@ -845,7 +851,7 @@ export default function AdminPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-3 text-xs font-bold text-slate-400 mt-1">
-                        <span>{formatDisplayDate(match.date)}</span>
+                        <span>{getMatchDisplayDate(match.match_date, match.date)}</span>
                         <span>{match.time}</span>
                       </div>
                       <div className="mt-2 inline-block">
@@ -885,7 +891,7 @@ export default function AdminPage() {
                         {group.match ? group.match.opponent : `Match #${group.matchId}`}
                       </div>
                       <div className="text-[11px] font-medium text-slate-400">
-                        {group.match ? `${formatDisplayDate(group.match.date)} • ${group.match.time}` : 'Unbekanntes Spiel'}
+                        {group.match ? `${getMatchDisplayDate(group.match.match_date, group.match.date)} • ${group.match.time}` : 'Unbekanntes Spiel'}
                       </div>
                     </div>
                     <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
@@ -977,7 +983,7 @@ export default function AdminPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-3 text-xs font-bold text-slate-400 mt-1">
-                      <span>{formatDisplayDate(match.date)}</span>
+                      <span>{getMatchDisplayDate(match.match_date, match.date)}</span>
                       <span>{match.time}</span>
                     </div>
                   </div>

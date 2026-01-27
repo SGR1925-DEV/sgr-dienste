@@ -6,6 +6,8 @@ export interface Match {
   location: string;
   team?: string | null; // 1. Mannschaft, 2. Mannschaft, 3. Mannschaft
   deleted_at?: string | null;
+  match_date?: string | null;
+  kickoff_at?: string | null;
 }
 
 export interface Slot {

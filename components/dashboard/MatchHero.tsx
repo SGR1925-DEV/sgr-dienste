@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { Calendar, MapPin } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Match } from '@/types';
-import { formatDisplayDate } from '@/lib/utils';
+import { getMatchDisplayDate } from '@/lib/utils';
 
 interface MatchHeroProps {
   match: Match;
@@ -39,7 +39,7 @@ export default function MatchHero({ match, openCount, progress }: MatchHeroProps
             <div className="flex justify-between items-start mb-6">
               <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
                 <Calendar className="w-4 h-4 text-blue-500" />
-                {formatDisplayDate(match.date)} • {match.time}
+                {getMatchDisplayDate(match.match_date, match.date)} • {match.time}
               </div>
               {openCount > 2 && (
                 <span className="relative flex h-3 w-3">

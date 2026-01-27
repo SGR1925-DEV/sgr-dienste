@@ -2,7 +2,7 @@
 
 import { supabaseServer } from '@/lib/supabase-server';
 import { revalidatePath } from 'next/cache';
-import { formatDisplayDate } from '@/lib/utils';
+import { getMatchDisplayDate } from '@/lib/utils';
 import {
   sendConfirmationEmail,
   sendCancellationEmail,
@@ -64,6 +64,7 @@ export async function bookSlot(
           id,
           opponent,
           date,
+          match_date,
           time,
           location,
           team
@@ -79,7 +80,7 @@ export async function bookSlot(
     // Send confirmation email only if contact is a valid email
     const match = slot.match as any;
     if (match) {
-      const formattedDate = formatDisplayDate(match.date);
+      const formattedDate = getMatchDisplayDate(match.match_date, match.date);
       const matchTitle = match.team 
         ? `${match.team} vs. ${match.opponent}`
         : `Heimspiel vs. ${match.opponent}`;
@@ -161,6 +162,7 @@ export async function requestCancellation(slotId: number, email: string): Promis
           id,
           opponent,
           date,
+          match_date,
           team
         )
       `)
@@ -170,7 +172,7 @@ export async function requestCancellation(slotId: number, email: string): Promis
     if (!slotError && slot) {
       const match = slot.match as any;
       if (match && slot.user_name) {
-        const formattedDate = formatDisplayDate(match.date);
+        const formattedDate = getMatchDisplayDate(match.match_date, match.date);
         
         try {
           await sendAdminCancellationNotification(
@@ -217,6 +219,7 @@ export async function adminConfirmCancellation(slotId: number): Promise<ActionRe
           id,
           opponent,
           date,
+          match_date,
           team
         )
       `)
@@ -263,7 +266,7 @@ export async function adminConfirmCancellation(slotId: number): Promise<ActionRe
     // Send cancellation email if contact is a valid email
     if (match && userContact && isValidEmail(userContact)) {
       try {
-        const formattedDate = formatDisplayDate(match.date);
+        const formattedDate = getMatchDisplayDate(match.match_date, match.date);
         const matchTitle = match.team 
           ? `${match.team} vs. ${match.opponent}`
           : `Heimspiel vs. ${match.opponent}`;
@@ -355,6 +358,7 @@ export async function adminRemoveUser(slotId: number): Promise<ActionResult> {
           id,
           opponent,
           date,
+          match_date,
           team
         )
       `)
@@ -391,7 +395,7 @@ export async function adminRemoveUser(slotId: number): Promise<ActionResult> {
     // Send cancellation email if contact is a valid email
     if (match && userContact && isValidEmail(userContact)) {
       try {
-        const formattedDate = formatDisplayDate(match.date);
+        const formattedDate = getMatchDisplayDate(match.match_date, match.date);
         const matchTitle = match.team 
           ? `${match.team} vs. ${match.opponent}`
           : `Heimspiel vs. ${match.opponent}`;
