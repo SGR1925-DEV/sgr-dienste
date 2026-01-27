@@ -12,7 +12,7 @@ import ServiceTypeManager from '@/components/admin/ServiceTypeManager';
 import StatusBadge from '@/components/ui/StatusBadge';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import AlertDialog from '@/components/ui/AlertDialog';
-import { adminConfirmCancellation, adminRejectCancellation, adminRemoveUser } from '@/app/actions';
+import { adminRemoveUser } from '@/app/actions';
 
 export default function AdminPage() {
   const router = useRouter();
@@ -426,8 +426,14 @@ export default function AdminPage() {
     if (adminAction.type) return;
     setAdminAction({ slotId, type: 'confirm' });
 
-    const result = await adminConfirmCancellation(slotId);
-    if (result.success) {
+    const response = await fetch('/api/admin/confirm-cancellation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slotId }),
+    });
+    const result = await response.json();
+
+    if (response.ok && result?.success) {
       await reloadEditorSlots();
       await loadData();
       setAlertDialog({
@@ -452,8 +458,14 @@ export default function AdminPage() {
     if (adminAction.type) return;
     setAdminAction({ slotId, type: 'reject' });
 
-    const result = await adminRejectCancellation(slotId);
-    if (result.success) {
+    const response = await fetch('/api/admin/reject-cancellation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slotId }),
+    });
+    const result = await response.json();
+
+    if (response.ok && result?.success) {
       await reloadEditorSlots();
       await loadData();
       setAlertDialog({

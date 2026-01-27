@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion';
 import { Check, ChevronRight, User, Beer, Utensils, Shield, Coins, Sparkles, XCircle } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Slot } from '@/types';
+import { SlotPublic } from '@/types';
 
 // Icons für Kategorien
 const getCategoryIcon = (category: string) => {
@@ -16,9 +16,9 @@ const getCategoryIcon = (category: string) => {
 };
 
 interface SlotListProps {
-  slots: Slot[];
-  onSlotClick: (slot: Slot) => void;
-  onRequestCancellation?: (slot: Slot) => void;
+  slots: SlotPublic[];
+  onSlotClick: (slot: SlotPublic) => void;
+  onRequestCancellation?: (slot: SlotPublic) => void;
   isSubmitting?: boolean;
   submittingSlotId?: number | null;
 }
@@ -52,7 +52,7 @@ export default function SlotList({
 
           <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100/50">
             {slots.filter(s => s.category === cat).map((slot, idx) => {
-              const isTaken = !!slot.user_contact || !!slot.user_name;
+              const isTaken = !!slot.user_name;
               const hasCancellationRequest = slot.cancellation_requested;
               const isRequesting = isSubmitting && submittingSlotId === slot.id;
               

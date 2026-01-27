@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Match, Slot } from '@/types';
+import { Match, SlotPublic } from '@/types';
 import Link from 'next/link';
 import { Calendar, Shield, Lock, History, Download } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -15,7 +15,7 @@ type TabType = 'upcoming' | 'past';
 
 export default function Dashboard() {
   const [matches, setMatches] = useState<Match[]>([]);
-  const [slots, setSlots] = useState<Slot[]>([]);
+  const [slots, setSlots] = useState<SlotPublic[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('upcoming');
 
@@ -23,7 +23,7 @@ export default function Dashboard() {
     const load = async () => {
       const [mRes, sRes] = await Promise.all([
         supabase.from('matches').select('*').order('id'),
-        supabase.from('slots').select('*')
+        supabase.from('slots_public').select('*')
       ]);
       
       if (mRes.data) setMatches(mRes.data);

@@ -2,10 +2,10 @@
 
 import { useMemo } from 'react';
 import { clsx } from 'clsx';
-import { Slot } from '@/types';
+import { SlotPublic } from '@/types';
 
 interface HallOfFameProps {
-  slots: Slot[];
+  slots: SlotPublic[];
 }
 
 interface HallOfFameEntry {

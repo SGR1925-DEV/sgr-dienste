@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { Phone, Info, Beer, Utensils, Shield, Coins, Sparkles } from 'lucide-react';
-import { Slot, ServiceTypeMember } from '@/types';
+import { SlotPublic, ServiceTypeMember } from '@/types';
 import LiquidContainer from '@/components/ui/LiquidContainer';
 
 // Icons für Kategorien (dupliziert von SlotList, könnte später in utils verschoben werden)
@@ -16,7 +16,7 @@ const getCategoryIcon = (category: string) => {
 };
 
 interface SignUpModalProps {
-  slot: Slot | null;
+  slot: SlotPublic | null;
   inputName: string;
   inputContact: string;
   isSubmitting: boolean;

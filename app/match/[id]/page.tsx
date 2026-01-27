@@ -3,12 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Match, Slot, ServiceType, ServiceTypeMember } from '@/types';
+import { Match, SlotPublic, ServiceType, ServiceTypeMember } from '@/types';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Calendar, Clock, Download } from 'lucide-react';
 import { formatDisplayDate, downloadICalendar } from '@/lib/utils';
 import SlotList from '@/components/match/SlotList';
 import SignUpModal from '@/components/match/SignUpModal';
+import CancellationModal from '@/components/match/CancellationModal';
 import { bookSlot, requestCancellation } from '@/app/actions';
 import AlertDialog from '@/components/ui/AlertDialog';
 
@@ -18,17 +19,19 @@ export default function MatchDetail() {
   const matchId = Number(params.id);
 
   const [match, setMatch] = useState<Match | null>(null);
-  const [slots, setSlots] = useState<Slot[]>([]);
+  const [slots, setSlots] = useState<SlotPublic[]>([]);
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
   const [serviceTypeMembers, setServiceTypeMembers] = useState<ServiceTypeMember[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Modal State
-  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<SlotPublic | null>(null);
   const [inputName, setInputName] = useState('');
   const [inputContact, setInputContact] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittingSlotId, setSubmittingSlotId] = useState<number | null>(null);
+  const [cancellationSlot, setCancellationSlot] = useState<SlotPublic | null>(null);
+  const [cancellationEmail, setCancellationEmail] = useState('');
   
   // Alert Dialog State
   const [alertDialog, setAlertDialog] = useState({
@@ -43,7 +46,7 @@ export default function MatchDetail() {
       const { data: matchData } = await supabase.from('matches').select('*').eq('id', matchId).single();
       if (matchData) setMatch(matchData);
       
-      const { data: slotsData } = await supabase.from('slots').select('*').eq('match_id', matchId).order('id');
+      const { data: slotsData } = await supabase.from('slots_public').select('*').eq('match_id', matchId).order('id');
       if (slotsData) setSlots(slotsData);
 
       const [typesRes, membersRes] = await Promise.all([
@@ -101,7 +104,7 @@ export default function MatchDetail() {
 
       if (result.success) {
         // Reload data to get updated slot status
-        const { data: slotsData } = await supabase.from('slots').select('*').eq('match_id', matchId).order('id');
+        const { data: slotsData } = await supabase.from('slots_public').select('*').eq('match_id', matchId).order('id');
         if (slotsData) setSlots(slotsData);
 
         setAlertDialog({
@@ -135,17 +138,34 @@ export default function MatchDetail() {
     }
   };
 
-  const handleRequestCancellation = async (slot: Slot) => {
-    if (isSubmitting) return;
+  const handleRequestCancellation = (slot: SlotPublic) => {
+    setCancellationSlot(slot);
+    setCancellationEmail('');
+  };
+
+  const handleConfirmCancellation = async () => {
+    if (!cancellationSlot || isSubmitting) return;
+
+    const normalizedEmail = cancellationEmail.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!normalizedEmail || !emailRegex.test(normalizedEmail)) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'E-Mail erforderlich',
+        message: 'Bitte gib eine gültige E-Mail-Adresse ein.',
+        variant: 'error',
+      });
+      return;
+    }
+
     setIsSubmitting(true);
-    setSubmittingSlotId(slot.id);
+    setSubmittingSlotId(cancellationSlot.id);
 
     try {
-      const result = await requestCancellation(slot.id);
+      const result = await requestCancellation(cancellationSlot.id, normalizedEmail);
 
       if (result.success) {
-        // Reload data to get updated slot status
-        const { data: slotsData } = await supabase.from('slots').select('*').eq('match_id', matchId).order('id');
+        const { data: slotsData } = await supabase.from('slots_public').select('*').eq('match_id', matchId).order('id');
         if (slotsData) setSlots(slotsData);
 
         setAlertDialog({
@@ -154,11 +174,13 @@ export default function MatchDetail() {
           message: 'Deine Austragung wurde beantragt. Ein Administrator wird sich darum kümmern.',
           variant: 'success',
         });
+        setCancellationSlot(null);
+        setCancellationEmail('');
       } else {
         setAlertDialog({
           isOpen: true,
           title: 'Fehler',
-          message: result.error || 'Fehler beim Beantragen der Austragung. Bitte erneut versuchen.',
+          message: result.error || 'Die E-Mail passt nicht zur Buchung.',
           variant: 'error',
         });
       }
@@ -260,6 +282,15 @@ export default function MatchDetail() {
         onNameChange={setInputName}
         onContactChange={setInputContact}
         onSubmit={handleSignUp}
+      />
+
+      <CancellationModal
+        slot={cancellationSlot}
+        inputEmail={cancellationEmail}
+        isSubmitting={isSubmitting && submittingSlotId === cancellationSlot?.id}
+        onClose={() => setCancellationSlot(null)}
+        onEmailChange={setCancellationEmail}
+        onSubmit={handleConfirmCancellation}
       />
 
       {/* Alert Dialog */}

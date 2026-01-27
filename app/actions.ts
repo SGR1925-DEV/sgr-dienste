@@ -9,6 +9,7 @@ import {
   sendAdminCancellationNotification,
   isValidEmail,
 } from '@/lib/email';
+import { RpcSlotResult } from '@/types';
 
 interface ActionResult {
   success: boolean;
@@ -40,7 +41,21 @@ export async function bookSlot(
       return { success: false, error: 'Bitte eine gültige E-Mail-Adresse angeben' };
     }
 
-    // Fetch slot details including match information
+    const { data, error } = await supabaseServer.rpc('book_slot', {
+      p_slot_id: slotId,
+      p_name: normalizedName,
+      p_email: normalizedEmail,
+    });
+
+    if (error) {
+      return { success: false, error: 'Fehler beim Speichern. Bitte erneut versuchen.' };
+    }
+
+    const result = (Array.isArray(data) ? data[0] : data) as RpcSlotResult | undefined;
+    if (!result?.success) {
+      return { success: false, error: 'Slot wurde gerade belegt' };
+    }
+
     const { data: slot, error: slotError } = await supabaseServer
       .from('slots')
       .select(`
@@ -58,33 +73,7 @@ export async function bookSlot(
       .single();
 
     if (slotError || !slot) {
-      return { success: false, error: 'Slot nicht gefunden' };
-    }
-
-    // Check if slot is already taken
-    if (slot.user_name || slot.user_contact) {
-      return { success: false, error: 'Dieser Slot ist bereits vergeben' };
-    }
-
-    // Update slot in database with optimistic concurrency check
-    const { data: updatedSlots, error: updateError } = await supabaseServer
-      .from('slots')
-      .update({
-        user_name: normalizedName,
-        user_contact: normalizedEmail,
-        cancellation_requested: false, // Reset cancellation flag on new sign-up
-      })
-      .eq('id', slotId)
-      .is('user_contact', null)
-      .eq('cancellation_requested', false)
-      .select('id');
-
-    if (updateError) {
-      return { success: false, error: 'Fehler beim Speichern. Bitte erneut versuchen.' };
-    }
-
-    if (!updatedSlots || updatedSlots.length === 0) {
-      return { success: false, error: 'Slot wurde gerade belegt' };
+      return { success: true };
     }
 
     // Send confirmation email only if contact is a valid email
@@ -113,7 +102,10 @@ export async function bookSlot(
     }
 
     // Revalidate the match page to show updated slot status
-    revalidatePath(`/match/${match?.id ?? slot.match_id}`);
+    const matchId = slot?.match_id ?? match?.id;
+    if (matchId) {
+      revalidatePath(`/match/${matchId}`);
+    }
     revalidatePath('/'); // Also revalidate homepage for leaderboard updates
 
     return { success: true };
@@ -139,9 +131,28 @@ export async function signUpForSlot(
  * Sets cancellation_requested flag but does NOT remove the user
  * Sends email notification to admin
  */
-export async function requestCancellation(slotId: number): Promise<ActionResult> {
+export async function requestCancellation(slotId: number, email: string): Promise<ActionResult> {
   try {
-    // Fetch slot with full match information
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
+      return { success: false, error: 'Bitte eine gültige E-Mail-Adresse angeben' };
+    }
+
+    const { data, error } = await supabaseServer.rpc('request_cancellation', {
+      p_slot_id: slotId,
+      p_email: normalizedEmail,
+      p_clear_contact: true,
+    });
+
+    if (error) {
+      return { success: false, error: 'Fehler beim Speichern. Bitte erneut versuchen.' };
+    }
+
+    const result = (Array.isArray(data) ? data[0] : data) as RpcSlotResult | undefined;
+    if (!result?.success) {
+      return { success: false, error: 'E-Mail passt nicht zur Buchung' };
+    }
+
     const { data: slot, error: slotError } = await supabaseServer
       .from('slots')
       .select(`
@@ -156,59 +167,31 @@ export async function requestCancellation(slotId: number): Promise<ActionResult>
       .eq('id', slotId)
       .single();
 
-    if (slotError || !slot) {
-      return { success: false, error: 'Slot nicht gefunden' };
-    }
-
-    if (!slot.user_name && !slot.user_contact) {
-      return { success: false, error: 'Dieser Slot ist nicht belegt' };
-    }
-
-    if (slot.cancellation_requested) {
-      return { success: false, error: 'Die Absage wurde bereits beantragt' };
-    }
-
-    // Update slot: set cancellation_requested = true
-    // Datenschutz/Helper-Logik: user_contact bleibt bis Admin bestätigt.
-    // TODO: Option B (spaeter): user_contact sofort loeschen bei cancellation_requested=true.
-    const { data: updatedSlots, error: updateError } = await supabaseServer
-      .from('slots')
-      .update({
-        cancellation_requested: true,
-      })
-      .eq('id', slotId)
-      .eq('cancellation_requested', false)
-      .select('id');
-
-    if (updateError) {
-      return { success: false, error: 'Fehler beim Speichern. Bitte erneut versuchen.' };
-    }
-
-    if (!updatedSlots || updatedSlots.length === 0) {
-      return { success: false, error: 'Die Anfrage wurde bereits bearbeitet' };
-    }
-
-    // Send admin notification email (don't fail if email fails)
-    const match = slot.match as any;
-    if (match && slot.user_name) {
-      const formattedDate = formatDisplayDate(match.date);
-      
-      try {
-        await sendAdminCancellationNotification(
-          slot.user_name,
-          slot.category,
-          formattedDate,
-          match.opponent
-        );
-      } catch (emailError) {
-        // Log email error but don't fail the cancellation request
-        console.error('Failed to send admin cancellation notification:', emailError);
-        // Continue - the cancellation request was successful even if email fails
+    if (!slotError && slot) {
+      const match = slot.match as any;
+      if (match && slot.user_name) {
+        const formattedDate = formatDisplayDate(match.date);
+        
+        try {
+          await sendAdminCancellationNotification(
+            slot.user_name,
+            slot.category,
+            formattedDate,
+            match.opponent
+          );
+        } catch (emailError) {
+          // Log email error but don't fail the cancellation request
+          console.error('Failed to send admin cancellation notification:', emailError);
+          // Continue - the cancellation request was successful even if email fails
+        }
       }
     }
 
     // Revalidate the match page
-    revalidatePath(`/match/${match?.id ?? slot.match_id}`);
+    const matchId = slot?.match_id ?? slot?.match?.id;
+    if (matchId) {
+      revalidatePath(`/match/${matchId}`);
+    }
     revalidatePath('/admin'); // Also revalidate admin page to show cancellation requests
     revalidatePath('/'); // Also revalidate homepage
 
@@ -438,3 +421,10 @@ export async function adminRemoveUser(slotId: number): Promise<ActionResult> {
     return { success: false, error: 'Ein unerwarteter Fehler ist aufgetreten' };
   }
 }
+
+// Smoke-Test-Plan:
+// 1) Public list loads via slots_public
+// 2) book_slot RPC success
+// 3) double booking fails with error
+// 4) request_cancellation requires correct email
+// 5) admin confirm frees slot

@@ -19,6 +19,22 @@ export interface Slot {
   duration_minutes?: number | null;
 }
 
+export interface SlotPublic {
+  id: number;
+  match_id: number;
+  category: string;
+  time: string;
+  user_name: string | null;
+  cancellation_requested: boolean;
+  helper_id?: string | null;
+  duration_minutes?: number | null;
+}
+
+export interface RpcSlotResult {
+  success: boolean;
+  slot_id: number;
+}
+
 export interface ServiceType {
   id: number;
   name: string;
