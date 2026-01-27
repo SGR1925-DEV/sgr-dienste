@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { fetchAdmin } from '@/lib/admin-client';
 import { useRouter } from 'next/navigation';
 import { Match, ServiceType, Slot, ServiceTypeMember } from '@/types';
 import { Plus, Settings, Trash2 } from 'lucide-react';
@@ -74,28 +75,12 @@ export default function AdminPage() {
     init();
   }, [router]);
 
-  const getAdminHeaders = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (session?.access_token) {
-      headers.Authorization = `Bearer ${session.access_token}`;
-    }
-    return headers;
-  }, []);
-
   const fetchAdminSlots = useCallback(async (matchId?: number) => {
-    const headers = await getAdminHeaders();
-    const response = await fetch('/api/admin/slots/list', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ match_id: matchId }),
+    const response = await fetchAdmin<Slot[]>('/api/admin/slots/list', {
+      match_id: matchId,
     });
-    const result = await response.json();
-    if (!response.ok) {
-      throw new Error(result?.error || 'Fehler beim Laden der Slots');
-    }
-    return (result?.data ?? []) as Slot[];
-  }, [getAdminHeaders]);
+    return response.data ?? [];
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -415,19 +400,11 @@ export default function AdminPage() {
         duration_minutes: durationMinutes,
     }));
     
-    const headers = await getAdminHeaders();
-    const responses = await Promise.all(
-      slotsToInsert.map(slot =>
-        fetch('/api/admin/slots/create', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(slot),
-        })
-      )
-    );
-
-    const hasError = responses.some(res => !res.ok);
-    if (hasError) {
+    try {
+      await Promise.all(
+        slotsToInsert.map(slot => fetchAdmin('/api/admin/slots/create', slot))
+      );
+    } catch (error) {
       setAlertDialog({
         isOpen: true,
         title: 'Fehler',
@@ -480,22 +457,17 @@ export default function AdminPage() {
         message: 'Diesen leeren Slot wirklich entfernen?',
         variant: 'danger',
         onConfirm: async () => {
-          const headers = await getAdminHeaders();
-          const response = await fetch('/api/admin/slots/delete', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ id: slotId }),
-          });
-          if (!response.ok) {
+          try {
+            await fetchAdmin('/api/admin/slots/delete', { id: slotId });
+            setEditorSlots(current => current.filter(s => s.id !== slotId));
+            await loadData();
+          } catch (error) {
             setAlertDialog({
               isOpen: true,
               title: 'Fehler',
-              message: 'Slot konnte nicht gelöscht werden.',
+              message: error instanceof Error ? error.message : 'Slot konnte nicht gelöscht werden.',
               variant: 'error',
             });
-          } else {
-            setEditorSlots(current => current.filter(s => s.id !== slotId));
-            await loadData();
           }
           setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         },
@@ -507,15 +479,8 @@ export default function AdminPage() {
     if (adminAction.type) return;
     setAdminAction({ slotId, type: 'confirm' });
 
-    const headers = await getAdminHeaders();
-    const response = await fetch('/api/admin/slots/confirm-cancellation', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ slotId }),
-    });
-    const result = await response.json();
-
-    if (response.ok && result?.success) {
+    try {
+      await fetchAdmin('/api/admin/slots/confirm-cancellation', { slotId });
       await reloadEditorSlots();
       await loadData();
       setAlertDialog({
@@ -524,11 +489,11 @@ export default function AdminPage() {
         message: 'Der Slot ist jetzt wieder frei.',
         variant: 'success',
       });
-    } else {
+    } catch (error) {
       setAlertDialog({
         isOpen: true,
         title: 'Fehler',
-        message: result.error || 'Fehler beim Bestätigen der Austragung.',
+        message: error instanceof Error ? error.message : 'Fehler beim Bestätigen der Austragung.',
         variant: 'error',
       });
     }
@@ -540,15 +505,8 @@ export default function AdminPage() {
     if (adminAction.type) return;
     setAdminAction({ slotId, type: 'reject' });
 
-    const headers = await getAdminHeaders();
-    const response = await fetch('/api/admin/slots/reject-cancellation', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ slotId }),
-    });
-    const result = await response.json();
-
-    if (response.ok && result?.success) {
+    try {
+      await fetchAdmin('/api/admin/slots/reject-cancellation', { slotId });
       await reloadEditorSlots();
       await loadData();
       setAlertDialog({
@@ -557,11 +515,11 @@ export default function AdminPage() {
         message: 'Die Austragungsanfrage wurde zurückgesetzt.',
         variant: 'success',
       });
-    } else {
+    } catch (error) {
       setAlertDialog({
         isOpen: true,
         title: 'Fehler',
-        message: result.error || 'Fehler beim Ablehnen der Anfrage.',
+        message: error instanceof Error ? error.message : 'Fehler beim Ablehnen der Anfrage.',
         variant: 'error',
       });
     }
@@ -589,23 +547,16 @@ export default function AdminPage() {
 
     setDurationUpdateSlotId(slotId);
 
-    const headers = await getAdminHeaders();
-    const response = await fetch('/api/admin/slots/update', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ id: slotId, duration_minutes: normalizedDuration }),
-    });
-    const result = await response.json();
-
-    if (!response.ok || !result?.success) {
+    try {
+      await fetchAdmin('/api/admin/slots/update', { id: slotId, duration_minutes: normalizedDuration });
+      updateSlotDurationInState(slotId, normalizedDuration);
+    } catch (error) {
       setAlertDialog({
         isOpen: true,
         title: 'Fehler',
-        message: result?.error || 'Fehler beim Aktualisieren der Dauer.',
+        message: error instanceof Error ? error.message : 'Fehler beim Aktualisieren der Dauer.',
         variant: 'error',
       });
-    } else {
-      updateSlotDurationInState(slotId, normalizedDuration);
     }
 
     setDurationUpdateSlotId(null);
@@ -741,7 +692,18 @@ export default function AdminPage() {
       variant: 'danger',
       onConfirm: async () => {
         // Zuerst alle Slots löschen (wegen Foreign Key Constraint)
-        await supabase.from('slots').delete().eq('match_id', id);
+        try {
+          await fetchAdmin('/api/admin/slots/delete-by-match', { match_id: id });
+        } catch (error) {
+          setAlertDialog({
+            isOpen: true,
+            title: 'Fehler',
+            message: error instanceof Error ? error.message : 'Slots konnten nicht gelöscht werden.',
+            variant: 'error',
+          });
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+          return;
+        }
         // Dann das Match löschen
         await supabase.from('matches').delete().eq('id', id);
         await loadData();
