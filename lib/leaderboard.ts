@@ -2,10 +2,7 @@
 
 import { supabaseServer } from '@/lib/supabase-server';
 import { LeaderboardRow } from '@/types';
-import { parseMatchDate } from '@/lib/utils';
-
-// Matches-Tabellenfeld fuer das Spiel-Datum (laut Schema: "date" als Text).
-const MATCH_DATE_FIELD = 'date';
+import { getMatchDateForComparison } from '@/lib/utils';
 
 const sortLeaderboard = (rows: LeaderboardRow[]) =>
   rows.sort((a, b) => {
@@ -32,7 +29,7 @@ export async function getLeaderboardBase(limit = 10) {
 export async function getLeaderboardByDateRange(startDate: Date, endDate: Date, limit = 10) {
   const { data, error } = await supabaseServer
     .from('slots')
-    .select(`helper_id,duration_minutes,match:matches(${MATCH_DATE_FIELD})`)
+    .select('helper_id,duration_minutes,match:matches(match_date,date)')
     .not('helper_id', 'is', null)
     .eq('cancellation_requested', false)
     .gt('duration_minutes', 0);
@@ -46,11 +43,9 @@ export async function getLeaderboardByDateRange(startDate: Date, endDate: Date, 
   data?.forEach((row: any) => {
     const helperId = row.helper_id as string | null;
     const duration = row.duration_minutes as number | null;
-    const matchDateValue = row.match?.[MATCH_DATE_FIELD] as string | null | undefined;
+    const matchDate = getMatchDateForComparison(row.match?.match_date, row.match?.date);
 
-    if (!helperId || !duration || duration <= 0 || !matchDateValue) return;
-
-    const matchDate = matchDateValue ? parseMatchDate(matchDateValue) : null;
+    if (!helperId || !duration || duration <= 0 || !matchDate) return;
     if (!matchDate) return;
     if (matchDate < startDate || matchDate > endDate) return;
 

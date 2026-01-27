@@ -6,7 +6,7 @@ import { Match, SlotPublic } from '@/types';
 import NextLink from 'next/link';
 import { Calendar, Shield, Lock, History, Download } from 'lucide-react';
 import { clsx } from 'clsx';
-import { parseMatchDate, downloadICalendar } from '@/lib/utils';
+import { getMatchDateForComparison, downloadICalendar } from '@/lib/utils';
 import MatchHero from '@/components/dashboard/MatchHero';
 import MatchList from '@/components/dashboard/MatchList';
 import HallOfFame from '@/components/dashboard/HallOfFame';
@@ -60,7 +60,7 @@ export default function Dashboard() {
     matches.forEach(match => {
       counts[match.id] = getOpenCount(match.id);
       
-      const matchDate = parseMatchDate(match.date);
+      const matchDate = getMatchDateForComparison(match.match_date, match.date);
       if (!matchDate) {
         // Falls Datum nicht geparst werden kann, behandle es als zukünftig
         upcoming.push(match);
@@ -78,16 +78,16 @@ export default function Dashboard() {
     
     // Sortiere kommende Spiele aufsteigend (nächstes zuerst)
     upcoming.sort((a, b) => {
-      const dateA = parseMatchDate(a.date);
-      const dateB = parseMatchDate(b.date);
+      const dateA = getMatchDateForComparison(a.match_date, a.date);
+      const dateB = getMatchDateForComparison(b.match_date, b.date);
       if (!dateA || !dateB) return 0;
       return dateA.getTime() - dateB.getTime();
     });
     
     // Sortiere vergangene Spiele absteigend (neuestes zuerst)
     past.sort((a, b) => {
-      const dateA = parseMatchDate(a.date);
-      const dateB = parseMatchDate(b.date);
+      const dateA = getMatchDateForComparison(a.match_date, a.date);
+      const dateB = getMatchDateForComparison(b.match_date, b.date);
       if (!dateA || !dateB) return 0;
       return dateB.getTime() - dateA.getTime();
     });

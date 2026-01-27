@@ -41,6 +41,22 @@ export const parseMatchDate = (dateString: string): Date | null => {
 };
 
 /**
+ * Liefert ein Date-Objekt aus match_date (ISO) oder legacy date string.
+ */
+export const getMatchDateForComparison = (
+  matchDate?: string | null,
+  legacyDate?: string | null
+): Date | null => {
+  if (matchDate) {
+    return isoStringToDate(matchDate) || null;
+  }
+  if (legacyDate) {
+    return parseMatchDate(legacyDate);
+  }
+  return null;
+};
+
+/**
  * Formatiert Datum für Anzeige (bereinigt Formatierung)
  * Input: "So, 06.12." oder "So., 6.12.." -> Output: "So, 06.12."
  * Entfernt doppelte Punkte, stellt korrektes Format sicher
@@ -79,6 +95,22 @@ export const formatDisplayDate = (dateString: string): string => {
   
   // Falls nichts geparst werden kann, gib bereinigte Version zurück
   return cleaned.replace(/\.$/, '') + '.';
+};
+
+/**
+ * Liefert Anzeige-Datum aus match_date (ISO) oder legacy date string.
+ */
+export const getMatchDisplayDate = (
+  matchDate?: string | null,
+  legacyDate?: string | null
+): string => {
+  if (matchDate) {
+    return formatDateForDisplay(matchDate);
+  }
+  if (legacyDate) {
+    return formatDisplayDate(legacyDate);
+  }
+  return '';
 };
 
 /**
@@ -210,6 +242,7 @@ export const generateICalendar = (matches: Array<{
   id: number;
   opponent: string;
   date: string;
+  match_date?: string | null;
   time: string;
   location: string;
   team?: string | null;
@@ -272,7 +305,7 @@ export const generateICalendar = (matches: Array<{
   ics += 'METHOD:PUBLISH\r\n';
 
   matches.forEach(match => {
-    const matchDate = parseMatchDate(match.date);
+    const matchDate = match.match_date ? isoStringToDate(match.match_date) : parseMatchDate(match.date);
     if (!matchDate) return;
 
     const dtStart = formatDateTime(matchDate, match.time);
