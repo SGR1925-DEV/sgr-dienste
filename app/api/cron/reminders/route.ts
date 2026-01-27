@@ -37,10 +37,11 @@ export async function GET(request: NextRequest) {
     targetDate.setDate(targetDate.getDate() + 2);
     targetDate.setHours(0, 0, 0, 0);
 
-    // Fetch all matches (we need to parse dates to find matches in 2 days)
+    // Fetch all active matches (we need to parse dates to find matches in 2 days)
     const { data: allMatches, error: matchesError } = await supabaseServer
       .from('matches')
-      .select('*');
+      .select('*')
+      .is('deleted_at', null);
 
     if (matchesError) {
       console.error('Error fetching matches:', matchesError);
