@@ -74,18 +74,50 @@ export default function AdminPage() {
     init();
   }, [router]);
 
-  const loadData = useCallback(async () => {
-    const [mRes, sRes, membersRes, slotsRes] = await Promise.all([
-      supabase.from('matches').select('*').order('id', { ascending: false }),
-      supabase.from('service_types').select('*').order('id'),
-      supabase.from('service_type_members').select('*').order('order', { ascending: true }),
-      supabase.from('slots').select('*')
-    ]);
-    if (mRes.data) setMatches(mRes.data);
-    if (sRes.data) setServiceTypes(sRes.data);
-    if (membersRes.data) setServiceTypeMembers(membersRes.data);
-    if (slotsRes.data) setAllSlots(slotsRes.data);
+  const getAdminHeaders = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (session?.access_token) {
+      headers.Authorization = `Bearer ${session.access_token}`;
+    }
+    return headers;
   }, []);
+
+  const fetchAdminSlots = useCallback(async (matchId?: number) => {
+    const headers = await getAdminHeaders();
+    const response = await fetch('/api/admin/slots/list', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ match_id: matchId }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result?.error || 'Fehler beim Laden der Slots');
+    }
+    return (result?.data ?? []) as Slot[];
+  }, [getAdminHeaders]);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [mRes, sRes, membersRes, slotsData] = await Promise.all([
+        supabase.from('matches').select('*').order('id', { ascending: false }),
+        supabase.from('service_types').select('*').order('id'),
+        supabase.from('service_type_members').select('*').order('order', { ascending: true }),
+        fetchAdminSlots()
+      ]);
+      if (mRes.data) setMatches(mRes.data);
+      if (sRes.data) setServiceTypes(sRes.data);
+      if (membersRes.data) setServiceTypeMembers(membersRes.data);
+      setAllSlots(slotsData);
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: 'Admin-Daten konnten nicht geladen werden.',
+        variant: 'error',
+      });
+    }
+  }, [fetchAdminSlots]);
 
   useEffect(() => {
     if (!hasMountedRef.current) {
@@ -213,8 +245,17 @@ export default function AdminPage() {
         team: match.team || '1. Mannschaft'
       });
       
-      const { data } = await supabase.from('slots').select('*').eq('match_id', match.id).order('id');
-      if (data) setEditorSlots(data);
+      try {
+        const data = await fetchAdminSlots(match.id);
+        setEditorSlots(data);
+      } catch (error) {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Fehler',
+          message: 'Slots konnten nicht geladen werden.',
+          variant: 'error',
+        });
+      }
     } else {
       setEditingMatchId(null);
       const today = new Date().toISOString().split('T')[0];
@@ -276,8 +317,17 @@ export default function AdminPage() {
 
   const reloadEditorSlots = async () => {
     if (!editingMatchId) return;
-    const { data } = await supabase.from('slots').select('*').eq('match_id', editingMatchId).order('id');
-    if (data) setEditorSlots(data);
+    try {
+      const data = await fetchAdminSlots(editingMatchId);
+      setEditorSlots(data);
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: 'Slots konnten nicht geladen werden.',
+        variant: 'error',
+      });
+    }
   };
 
   const saveMatchMetadata = async () => {
@@ -365,13 +415,30 @@ export default function AdminPage() {
         duration_minutes: durationMinutes,
     }));
     
-    await supabase.from('slots').insert(slotsToInsert);
-    
-    const { data } = await supabase.from('slots').select('*').eq('match_id', editingMatchId).order('id');
-    if (data) {
-        setEditorSlots(data);
-        loadData();
+    const headers = await getAdminHeaders();
+    const responses = await Promise.all(
+      slotsToInsert.map(slot =>
+        fetch('/api/admin/slots/create', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(slot),
+        })
+      )
+    );
+
+    const hasError = responses.some(res => !res.ok);
+    if (hasError) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: 'Slots konnten nicht erstellt werden.',
+        variant: 'error',
+      });
+      return;
     }
+
+    await reloadEditorSlots();
+    loadData();
   };
 
   const deleteSlot = async (slotId: number, userName: string | null) => {
@@ -413,9 +480,23 @@ export default function AdminPage() {
         message: 'Diesen leeren Slot wirklich entfernen?',
         variant: 'danger',
         onConfirm: async () => {
-          await supabase.from('slots').delete().eq('id', slotId);
-          setEditorSlots(current => current.filter(s => s.id !== slotId));
-          await loadData();
+          const headers = await getAdminHeaders();
+          const response = await fetch('/api/admin/slots/delete', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ id: slotId }),
+          });
+          if (!response.ok) {
+            setAlertDialog({
+              isOpen: true,
+              title: 'Fehler',
+              message: 'Slot konnte nicht gelöscht werden.',
+              variant: 'error',
+            });
+          } else {
+            setEditorSlots(current => current.filter(s => s.id !== slotId));
+            await loadData();
+          }
           setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         },
       });
@@ -426,9 +507,10 @@ export default function AdminPage() {
     if (adminAction.type) return;
     setAdminAction({ slotId, type: 'confirm' });
 
-    const response = await fetch('/api/admin/confirm-cancellation', {
+    const headers = await getAdminHeaders();
+    const response = await fetch('/api/admin/slots/confirm-cancellation', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ slotId }),
     });
     const result = await response.json();
@@ -458,9 +540,10 @@ export default function AdminPage() {
     if (adminAction.type) return;
     setAdminAction({ slotId, type: 'reject' });
 
-    const response = await fetch('/api/admin/reject-cancellation', {
+    const headers = await getAdminHeaders();
+    const response = await fetch('/api/admin/slots/reject-cancellation', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ slotId }),
     });
     const result = await response.json();
@@ -506,16 +589,19 @@ export default function AdminPage() {
 
     setDurationUpdateSlotId(slotId);
 
-    const { error } = await supabase
-      .from('slots')
-      .update({ duration_minutes: normalizedDuration })
-      .eq('id', slotId);
+    const headers = await getAdminHeaders();
+    const response = await fetch('/api/admin/slots/update', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ id: slotId, duration_minutes: normalizedDuration }),
+    });
+    const result = await response.json();
 
-    if (error) {
+    if (!response.ok || !result?.success) {
       setAlertDialog({
         isOpen: true,
         title: 'Fehler',
-        message: 'Fehler beim Aktualisieren der Dauer.',
+        message: result?.error || 'Fehler beim Aktualisieren der Dauer.',
         variant: 'error',
       });
     } else {

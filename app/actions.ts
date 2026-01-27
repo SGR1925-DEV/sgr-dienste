@@ -428,3 +428,6 @@ export async function adminRemoveUser(slotId: number): Promise<ActionResult> {
 // 3) double booking fails with error
 // 4) request_cancellation requires correct email
 // 5) admin confirm frees slot
+// 6) admin create slot ok
+// 7) admin update duration ok
+// 8) admin delete slot ok
