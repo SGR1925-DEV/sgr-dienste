@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css"; // Korrigierter Pfad
+import Footer from "@/components/ui/Footer";
 
 export const metadata: Metadata = {
   title: "SG Ruwertal 1925 e.V.",
@@ -13,8 +14,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="de">
-      <body className="antialiased bg-slate-50">
-        {children}
+      <body className="antialiased bg-slate-50 min-h-screen flex flex-col">
+        <div className="flex-1">{children}</div>
+        <Footer />
       </body>
     </html>
   );
