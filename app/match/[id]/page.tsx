@@ -3,13 +3,14 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Match, Slot, ServiceType, ServiceTypeMember } from '@/types';
+import { Match, SlotPublic, ServiceType, ServiceTypeMember } from '@/types';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Calendar, Clock, Download } from 'lucide-react';
 import { formatDisplayDate, downloadICalendar } from '@/lib/utils';
 import SlotList from '@/components/match/SlotList';
 import SignUpModal from '@/components/match/SignUpModal';
-import { signUpForSlot, requestCancellation } from '@/app/actions';
+import CancellationModal from '@/components/match/CancellationModal';
+import { bookSlot, requestCancellation } from '@/app/actions';
 import AlertDialog from '@/components/ui/AlertDialog';
 
 export default function MatchDetail() {
@@ -18,16 +19,19 @@ export default function MatchDetail() {
   const matchId = Number(params.id);
 
   const [match, setMatch] = useState<Match | null>(null);
-  const [slots, setSlots] = useState<Slot[]>([]);
+  const [slots, setSlots] = useState<SlotPublic[]>([]);
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
   const [serviceTypeMembers, setServiceTypeMembers] = useState<ServiceTypeMember[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Modal State
-  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<SlotPublic | null>(null);
   const [inputName, setInputName] = useState('');
   const [inputContact, setInputContact] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submittingSlotId, setSubmittingSlotId] = useState<number | null>(null);
+  const [cancellationSlot, setCancellationSlot] = useState<SlotPublic | null>(null);
+  const [cancellationEmail, setCancellationEmail] = useState('');
   
   // Alert Dialog State
   const [alertDialog, setAlertDialog] = useState({
@@ -42,7 +46,7 @@ export default function MatchDetail() {
       const { data: matchData } = await supabase.from('matches').select('*').eq('id', matchId).single();
       if (matchData) setMatch(matchData);
       
-      const { data: slotsData } = await supabase.from('slots').select('*').eq('match_id', matchId).order('id');
+      const { data: slotsData } = await supabase.from('slots_public').select('*').eq('match_id', matchId).order('id');
       if (slotsData) setSlots(slotsData);
 
       const [typesRes, membersRes] = await Promise.all([
@@ -65,7 +69,13 @@ export default function MatchDetail() {
   }, [matchId]);
 
   const handleSignUp = async () => {
-    if (!selectedSlot || inputName.length < 2) {
+    if (isSubmitting) return;
+
+    const normalizedName = inputName.trim();
+    const normalizedEmail = inputContact.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!selectedSlot || normalizedName.length < 2) {
       setAlertDialog({
         isOpen: true,
         title: 'Validierungsfehler',
@@ -75,76 +85,116 @@ export default function MatchDetail() {
       return;
     }
 
-    // Validate contact (email or phone)
-    if (!inputContact || inputContact.trim().length === 0) {
+    // Validate contact (email required)
+    if (!normalizedEmail || !emailRegex.test(normalizedEmail)) {
       setAlertDialog({
         isOpen: true,
-        title: 'Kontakt erforderlich',
-        message: 'Bitte gib deine E-Mail-Adresse oder Telefonnummer ein.',
+        title: 'E-Mail erforderlich',
+        message: 'Bitte gib eine gültige E-Mail-Adresse ein.',
         variant: 'error',
       });
       return;
     }
 
     setIsSubmitting(true);
+    setSubmittingSlotId(selectedSlot.id);
 
-    const result = await signUpForSlot(selectedSlot.id, inputName, inputContact);
+    try {
+      const result = await bookSlot(selectedSlot.id, normalizedName, normalizedEmail);
 
-    if (result.success) {
-      // Reload data to get updated slot status
-      const { data: slotsData } = await supabase.from('slots').select('*').eq('match_id', matchId).order('id');
-      if (slotsData) setSlots(slotsData);
+      if (result.success) {
+        // Reload data to get updated slot status
+        const { data: slotsData } = await supabase.from('slots_public').select('*').eq('match_id', matchId).order('id');
+        if (slotsData) setSlots(slotsData);
 
-      setAlertDialog({
-        isOpen: true,
-        title: 'Erfolgreich eingetragen!',
-        message: inputContact.includes('@') 
-          ? 'Du hast dich erfolgreich eingetragen. Eine Bestätigungs-E-Mail wurde an dich gesendet.'
-          : 'Du hast dich erfolgreich eingetragen.',
-        variant: 'success',
-      });
+        setAlertDialog({
+          isOpen: true,
+          title: 'Erfolgreich eingetragen!',
+          message: 'Du hast dich erfolgreich eingetragen. Eine Bestätigungs-E-Mail wurde an dich gesendet.',
+          variant: 'success',
+        });
 
-      setSelectedSlot(null);
-      setInputName('');
-      setInputContact('');
-    } else {
+        setSelectedSlot(null);
+        setInputName('');
+        setInputContact('');
+      } else {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Fehler',
+          message: result.error || 'Fehler beim Speichern. Bitte erneut versuchen.',
+          variant: 'error',
+        });
+      }
+    } catch (error) {
       setAlertDialog({
         isOpen: true,
         title: 'Fehler',
-        message: result.error || 'Fehler beim Speichern. Bitte erneut versuchen.',
+        message: 'Fehler beim Speichern. Bitte erneut versuchen.',
         variant: 'error',
       });
+    } finally {
+      setIsSubmitting(false);
+      setSubmittingSlotId(null);
     }
-
-    setIsSubmitting(false);
   };
 
-  const handleRequestCancellation = async (slot: Slot) => {
-    setIsSubmitting(true);
+  const handleRequestCancellation = (slot: SlotPublic) => {
+    setCancellationSlot(slot);
+    setCancellationEmail('');
+  };
 
-    const result = await requestCancellation(slot.id);
+  const handleConfirmCancellation = async () => {
+    if (!cancellationSlot || isSubmitting) return;
 
-    if (result.success) {
-      // Reload data to get updated slot status
-      const { data: slotsData } = await supabase.from('slots').select('*').eq('match_id', matchId).order('id');
-      if (slotsData) setSlots(slotsData);
-
+    const normalizedEmail = cancellationEmail.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!normalizedEmail || !emailRegex.test(normalizedEmail)) {
       setAlertDialog({
         isOpen: true,
-        title: 'Absage beantragt',
-        message: 'Deine Absage wurde beantragt. Ein Administrator wird sich darum kümmern.',
-        variant: 'success',
+        title: 'E-Mail erforderlich',
+        message: 'Bitte gib eine gültige E-Mail-Adresse ein.',
+        variant: 'error',
       });
-    } else {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmittingSlotId(cancellationSlot.id);
+
+    try {
+      const result = await requestCancellation(cancellationSlot.id, normalizedEmail);
+
+      if (result.success) {
+        const { data: slotsData } = await supabase.from('slots_public').select('*').eq('match_id', matchId).order('id');
+        if (slotsData) setSlots(slotsData);
+
+        setAlertDialog({
+          isOpen: true,
+          title: 'Austragung beantragt',
+          message: 'Deine Austragung wurde beantragt. Ein Administrator wird sich darum kümmern.',
+          variant: 'success',
+        });
+        setCancellationSlot(null);
+        setCancellationEmail('');
+      } else {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Fehler',
+          message: result.error || 'Die E-Mail passt nicht zur Buchung.',
+          variant: 'error',
+        });
+      }
+    } catch (error) {
       setAlertDialog({
         isOpen: true,
         title: 'Fehler',
-        message: result.error || 'Fehler beim Beantragen der Absage. Bitte erneut versuchen.',
+        message: 'Fehler beim Beantragen der Austragung. Bitte erneut versuchen.',
         variant: 'error',
       });
+    } finally {
+      setIsSubmitting(false);
+      setSubmittingSlotId(null);
     }
-
-    setIsSubmitting(false);
   };
 
   if (loading) return (
@@ -209,7 +259,13 @@ export default function MatchDetail() {
       </div>
 
       {/* Slots Liste */}
-      <SlotList slots={slots} onSlotClick={setSelectedSlot} onRequestCancellation={handleRequestCancellation} />
+      <SlotList
+        slots={slots}
+        onSlotClick={setSelectedSlot}
+        onRequestCancellation={handleRequestCancellation}
+        isSubmitting={isSubmitting}
+        submittingSlotId={submittingSlotId}
+      />
 
       {/* Eintragen Modal */}
       <SignUpModal
@@ -226,6 +282,15 @@ export default function MatchDetail() {
         onNameChange={setInputName}
         onContactChange={setInputContact}
         onSubmit={handleSignUp}
+      />
+
+      <CancellationModal
+        slot={cancellationSlot}
+        inputEmail={cancellationEmail}
+        isSubmitting={isSubmitting && submittingSlotId === cancellationSlot?.id}
+        onClose={() => setCancellationSlot(null)}
+        onEmailChange={setCancellationEmail}
+        onSubmit={handleConfirmCancellation}
       />
 
       {/* Alert Dialog */}

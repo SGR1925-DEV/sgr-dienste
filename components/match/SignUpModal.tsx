@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { Phone, Info, Beer, Utensils, Shield, Coins, Sparkles } from 'lucide-react';
-import { Slot, ServiceTypeMember } from '@/types';
+import { SlotPublic, ServiceTypeMember } from '@/types';
 import LiquidContainer from '@/components/ui/LiquidContainer';
 
 // Icons für Kategorien (dupliziert von SlotList, könnte später in utils verschoben werden)
@@ -16,7 +16,7 @@ const getCategoryIcon = (category: string) => {
 };
 
 interface SignUpModalProps {
-  slot: Slot | null;
+  slot: SlotPublic | null;
   inputName: string;
   inputContact: string;
   isSubmitting: boolean;
@@ -45,6 +45,10 @@ export default function SignUpModal({
   if (!slot) return null;
 
   const hasMemberDataset = availableMembers.length > 0;
+  const normalizedName = inputName.trim();
+  const normalizedEmail = inputContact.trim().toLowerCase();
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail);
+  const isNameValid = normalizedName.length >= 2;
 
   return (
     <AnimatePresence>
@@ -112,7 +116,7 @@ export default function SignUpModal({
             {/* E-Mail Input (Required) */}
             <LiquidContainer className="p-2 rounded-2xl focus-within:ring-2 focus-within:ring-blue-500/20">
               <label className="relative block text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-3 pt-1 flex items-center gap-1">
-                <Phone className="w-3 h-3" /> E-Mail (Pflicht für Bestätigung) *
+                <Phone className="w-3 h-3" /> E-Mail (Pflicht) *
               </label>
               <input 
                 type="email" 
@@ -134,7 +138,7 @@ export default function SignUpModal({
 
             <button 
               onClick={onSubmit}
-              disabled={inputName.length < 2 || !inputContact || !inputContact.includes('@') || isSubmitting}
+              disabled={!isNameValid || !isEmailValid || isSubmitting}
               className="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl text-lg shadow-xl shadow-blue-500/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:shadow-none"
             >
               {isSubmitting ? '...' : 'Verbindlich eintragen'}

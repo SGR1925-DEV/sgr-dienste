@@ -2,20 +2,20 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Match, Slot } from '@/types';
+import { Match, SlotPublic } from '@/types';
 import Link from 'next/link';
 import { Calendar, Shield, Lock, History, Download } from 'lucide-react';
 import { clsx } from 'clsx';
 import { parseMatchDate, downloadICalendar } from '@/lib/utils';
 import MatchHero from '@/components/dashboard/MatchHero';
 import MatchList from '@/components/dashboard/MatchList';
-import Leaderboard from '@/components/dashboard/Leaderboard';
+import HallOfFame from '@/components/dashboard/HallOfFame';
 
 type TabType = 'upcoming' | 'past';
 
 export default function Dashboard() {
   const [matches, setMatches] = useState<Match[]>([]);
-  const [slots, setSlots] = useState<Slot[]>([]);
+  const [slots, setSlots] = useState<SlotPublic[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('upcoming');
 
@@ -23,7 +23,7 @@ export default function Dashboard() {
     const load = async () => {
       const [mRes, sRes] = await Promise.all([
         supabase.from('matches').select('*').order('id'),
-        supabase.from('slots').select('*')
+        supabase.from('slots_public').select('*')
       ]);
       
       if (mRes.data) setMatches(mRes.data);
@@ -181,7 +181,7 @@ export default function Dashboard() {
             openCount={openCounts[nextMatch.id] || 0}
             progress={getProgress(nextMatch.id)}
           />
-        )}
+        )}        
 
         {/* LIST SECTION */}
         <MatchList 
@@ -191,8 +191,8 @@ export default function Dashboard() {
           title={activeTab === 'upcoming' ? 'Kommende Spiele' : 'Vergangene Spiele'}
         />
 
-        {/* LEADERBOARD SECTION */}
-        <Leaderboard slots={slots} />
+        {/* HALL OF FAME */}
+        <HallOfFame slots={slots} />
 
         {/* FOOTER MIT LOGIN LINK */}
         <footer className="mt-12 mb-6 flex justify-center">
