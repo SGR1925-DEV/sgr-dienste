@@ -1,13 +1,13 @@
 'use client';
 
-import { Calendar, Settings, LogOut, History, AlertCircle } from 'lucide-react';
+import { Calendar, Settings, LogOut, History, AlertCircle, Trash2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 
 interface AdminHeaderProps {
-  activeTab: 'upcoming' | 'past' | 'settings' | 'cancellations';
-  onTabChange: (tab: 'upcoming' | 'past' | 'settings' | 'cancellations') => void;
+  activeTab: 'upcoming' | 'past' | 'settings' | 'cancellations' | 'trash';
+  onTabChange: (tab: 'upcoming' | 'past' | 'settings' | 'cancellations' | 'trash') => void;
   cancellationCount: number;
 }
 
@@ -58,6 +58,15 @@ export default function AdminHeader({ activeTab, onTabChange, cancellationCount 
               {displayCount}
             </span>
           )}
+        </button>
+        <button 
+          onClick={() => onTabChange('trash')} 
+          className={clsx(
+            "flex-1 py-2.5 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2",
+            activeTab === 'trash' ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white"
+          )}
+        >
+          <Trash2 className="w-4 h-4" /> Papierkorb
         </button>
         <button 
           onClick={() => onTabChange('past')} 
