@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { ChevronRight, MapPin } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Match } from '@/types';
-import { formatDisplayDate, getDateParts } from '@/lib/utils';
+import { getDateParts, getMatchDisplayDate } from '@/lib/utils';
 
 interface MatchListProps {
   matches: Match[];
@@ -37,7 +37,8 @@ export default function MatchList({ matches, openCounts, isPast = false, title }
       <h2 className="text-lg font-bold text-slate-800 mb-4 px-1">{title}</h2>
       <div className="space-y-3">
         {matches.map((match, i) => {
-          const dateParts = getDateParts(match.date);
+          const displayDate = getMatchDisplayDate(match.match_date, match.date);
+          const dateParts = getDateParts(displayDate);
           const openCount = openCounts[match.id] || 0;
           
           return (
@@ -84,7 +85,7 @@ export default function MatchList({ matches, openCounts, isPast = false, title }
                       "text-xs font-medium mt-1 flex items-center gap-2 flex-wrap",
                       isPast ? "text-slate-400" : "text-slate-400"
                     )}>
-                      <span>{formatDisplayDate(match.date)} • {match.time} Uhr</span>
+                      <span>{displayDate} • {match.time} Uhr</span>
                       {match.location && (
                         <span className="flex items-center gap-1">
                           <MapPin className="w-3 h-3" />

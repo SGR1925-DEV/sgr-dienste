@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { Resend } from 'resend';
-import { formatDisplayDate, parseMatchDate } from '@/lib/utils';
+import { getMatchDateForComparison, getMatchDisplayDate } from '@/lib/utils';
 import { isValidEmail } from '@/lib/email';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
 
     // Filter matches that are happening in 2 days
     const matches = allMatches.filter(match => {
-      const matchDate = parseMatchDate(match.date);
+      const matchDate = getMatchDateForComparison(match.match_date, match.date);
       if (!matchDate) return false;
       
       const matchDateOnly = new Date(matchDate.getFullYear(), matchDate.getMonth(), matchDate.getDate());
@@ -115,7 +115,7 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        const formattedDate = formatDisplayDate(match.date);
+        const formattedDate = getMatchDisplayDate(match.match_date, match.date);
         const matchTitle = match.team
           ? `${match.team} vs. ${match.opponent}`
           : `Heimspiel vs. ${match.opponent}`;
