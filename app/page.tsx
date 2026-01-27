@@ -118,8 +118,17 @@ export default function Dashboard() {
             <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-0.5">Willkommen zurück</p>
             <h1 className="text-xl font-bold text-slate-900">SG Ruwertal 1925 e.V.</h1>
           </div>
-          <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold border border-blue-200">
-            SGR
+          <div className="flex items-center gap-2">
+            <Link
+              href="/login"
+              className="h-9 w-9 bg-white/80 rounded-full flex items-center justify-center text-slate-500 border border-slate-200 shadow-sm hover:text-blue-600 hover:border-blue-200 transition-colors"
+              aria-label="Admin Login"
+            >
+              <Lock className="w-4 h-4" />
+            </Link>
+            <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold border border-blue-200">
+              SGR
+            </div>
           </div>
         </div>
       </header>
