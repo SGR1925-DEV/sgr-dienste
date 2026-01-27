@@ -18,7 +18,7 @@ import { adminRemoveUser } from '@/app/actions';
 export default function AdminPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'settings' | 'cancellations'>('upcoming');
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'settings' | 'cancellations' | 'trash'>('upcoming');
   const hasMountedRef = useRef(false);
   
   const [matches, setMatches] = useState<Match[]>([]);
@@ -120,6 +120,12 @@ export default function AdminPage() {
     return new Map(matches.map(match => [match.id, match]));
   }, [matches]);
 
+  const { activeMatches, deletedMatches } = useMemo(() => {
+    const active = matches.filter(match => !match.deleted_at);
+    const deleted = matches.filter(match => match.deleted_at);
+    return { activeMatches: active, deletedMatches: deleted };
+  }, [matches]);
+
   const groupedCancellations = useMemo(() => {
     const getSlotStartMinutes = (time: string) => {
       const match = time.match(/(\d{1,2}):(\d{2})/);
@@ -181,7 +187,7 @@ export default function AdminPage() {
     const upcoming: Match[] = [];
     const past: Match[] = [];
     
-    matches.forEach(match => {
+    activeMatches.forEach(match => {
       const matchDate = parseMatchDate(match.date);
       if (!matchDate) {
         // Falls Datum nicht geparst werden kann, behandle es als zukünftig
@@ -215,7 +221,7 @@ export default function AdminPage() {
     });
     
     return { upcomingMatches: upcoming, pastMatches: past };
-  }, [matches]);
+  }, [activeMatches]);
 
   const openEditor = async (match?: Match) => {
     if (match) {
@@ -682,13 +688,58 @@ export default function AdminPage() {
     loadData();
   };
 
-  const deleteMatch = async (id: number, opponent: string, e: React.MouseEvent) => {
+  const softDeleteMatch = async (id: number, opponent: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Verhindert, dass der Click-Event weitergegeben wird
     
     setConfirmDialog({
       isOpen: true,
-      title: 'Spiel löschen',
-      message: `Spiel "${opponent}" und ALLE zugehörigen Dienste wirklich löschen?`,
+      title: 'In den Papierkorb verschieben',
+      message: `In den Papierkorb verschieben?\n\n"${opponent}" kann innerhalb von 7 Tagen wiederhergestellt werden.`,
+      variant: 'danger',
+      onConfirm: async () => {
+        const { error } = await supabase
+          .from('matches')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', id);
+        if (error) {
+          setAlertDialog({
+            isOpen: true,
+            title: 'Fehler',
+            message: error.message || 'Spiel konnte nicht verschoben werden.',
+            variant: 'error',
+          });
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+          return;
+        }
+        await loadData();
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      },
+    });
+  };
+
+  const restoreMatch = async (id: number) => {
+    try {
+      const { error } = await supabase
+        .from('matches')
+        .update({ deleted_at: null })
+        .eq('id', id);
+      if (error) throw error;
+      await loadData();
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: error instanceof Error ? error.message : 'Spiel konnte nicht wiederhergestellt werden.',
+        variant: 'error',
+      });
+    }
+  };
+
+  const permanentDeleteMatch = async (id: number, opponent: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Spiel endgültig löschen',
+      message: `Spiel "${opponent}" endgültig löschen?\n\nDies kann nicht rückgängig gemacht werden und löscht alle zugehörigen Slots.`,
       variant: 'danger',
       onConfirm: async () => {
         // Zuerst alle Slots löschen (wegen Foreign Key Constraint)
@@ -704,8 +755,17 @@ export default function AdminPage() {
           setConfirmDialog(prev => ({ ...prev, isOpen: false }));
           return;
         }
-        // Dann das Match löschen
-        await supabase.from('matches').delete().eq('id', id);
+        const { error } = await supabase.from('matches').delete().eq('id', id);
+        if (error) {
+          setAlertDialog({
+            isOpen: true,
+            title: 'Fehler',
+            message: error.message || 'Spiel konnte nicht endgültig gelöscht werden.',
+            variant: 'error',
+          });
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+          return;
+        }
         await loadData();
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
       },
@@ -794,9 +854,9 @@ export default function AdminPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={(e) => deleteMatch(match.id, match.opponent, e)}
+                        onClick={(e) => softDeleteMatch(match.id, match.opponent, e)}
                         className="p-2 rounded-lg text-slate-400 active:text-red-500 hover:text-red-500 hover:bg-red-50 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 touch-manipulation"
-                        title="Spiel löschen"
+                        title="In den Papierkorb verschieben"
                       >
                         <Trash2 className="w-5 h-5" />
                       </button>
@@ -889,6 +949,51 @@ export default function AdminPage() {
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+        {activeTab === 'trash' && (
+          <div className="space-y-3 pb-10">
+            {deletedMatches.length === 0 ? (
+              <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-center text-slate-500 text-sm">
+                Papierkorb ist leer.
+              </div>
+            ) : (
+              deletedMatches.map(match => (
+                <div
+                  key={match.id}
+                  className="bg-slate-50 p-4 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center text-slate-500"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="font-bold text-slate-600 text-lg">{match.opponent}</div>
+                      {match.team && (
+                        <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full border border-slate-200">
+                          {match.team}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 text-xs font-bold text-slate-400 mt-1">
+                      <span>{formatDisplayDate(match.date)}</span>
+                      <span>{match.time}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <button
+                      onClick={() => restoreMatch(match.id)}
+                      className="px-3 py-1.5 rounded-lg text-[11px] font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 active:scale-95 transition-colors"
+                    >
+                      ♻️ Wiederherstellen
+                    </button>
+                    <button
+                      onClick={() => permanentDeleteMatch(match.id, match.opponent)}
+                      className="px-3 py-1.5 rounded-lg text-[11px] font-bold bg-red-50 text-red-700 hover:bg-red-100 active:scale-95 transition-colors"
+                    >
+                      💥 Endgültig löschen
+                    </button>
                   </div>
                 </div>
               ))
