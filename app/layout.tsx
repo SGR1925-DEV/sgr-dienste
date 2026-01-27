@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css"; // Korrigierter Pfad
+import CookieBanner from "@/components/ui/CookieBanner";
 import Footer from "@/components/ui/Footer";
 
 export const metadata: Metadata = {
@@ -17,6 +18,7 @@ export default function RootLayout({
       <body className="antialiased bg-slate-50 min-h-screen flex flex-col">
         <div className="flex-1">{children}</div>
         <Footer />
+        <CookieBanner />
       </body>
     </html>
   );
