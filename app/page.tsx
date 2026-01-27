@@ -3,7 +3,8 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Match, SlotPublic } from '@/types';
-import { Calendar, History, Download } from 'lucide-react';
+import NextLink from 'next/link';
+import { Calendar, Shield, Lock, History, Download } from 'lucide-react';
 import { clsx } from 'clsx';
 import { parseMatchDate, downloadICalendar } from '@/lib/utils';
 import MatchHero from '@/components/dashboard/MatchHero';
@@ -119,13 +120,13 @@ export default function Dashboard() {
             <h1 className="text-xl font-bold text-slate-900">SG Ruwertal 1925 e.V.</h1>
           </div>
           <div className="flex items-center gap-2">
-            <Link
+            <NextLink
               href="/login"
               className="h-9 w-9 bg-white/80 rounded-full flex items-center justify-center text-slate-500 border border-slate-200 shadow-sm hover:text-blue-600 hover:border-blue-200 transition-colors"
               aria-label="Admin Login"
             >
               <Lock className="w-4 h-4" />
-            </Link>
+            </NextLink>
             <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold border border-blue-200">
               SGR
             </div>
@@ -201,6 +202,16 @@ export default function Dashboard() {
 
         {/* HALL OF FAME */}
         <HallOfFame slots={slots} />
+
+        {/* FOOTER MIT LOGIN LINK */}
+        <footer className="mt-12 mb-6 flex justify-center">
+          <NextLink 
+            href="/login" 
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-slate-100/50 hover:bg-white text-slate-400 hover:text-blue-600 text-xs font-bold transition-all border border-transparent hover:border-blue-100 shadow-sm hover:shadow-md"
+          >
+            <Lock className="w-3 h-3" /> Admin Login
+          </NextLink>
+        </footer>
 
       </div>
     </main>
