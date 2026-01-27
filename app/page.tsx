@@ -21,7 +21,7 @@ export default function Dashboard() {
   useEffect(() => {
     const load = async () => {
       const [mRes, sRes] = await Promise.all([
-        supabase.from('matches').select('*').order('id'),
+        supabase.from('matches').select('*').is('deleted_at', null).order('id'),
         supabase.from('slots_public').select('*')
       ]);
       

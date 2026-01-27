@@ -43,8 +43,18 @@ export default function MatchDetail() {
 
   useEffect(() => {
     const fetchData = async () => {
-      const { data: matchData } = await supabase.from('matches').select('*').eq('id', matchId).single();
-      if (matchData) setMatch(matchData);
+      const { data: matchData } = await supabase
+        .from('matches')
+        .select('*')
+        .eq('id', matchId)
+        .is('deleted_at', null)
+        .single();
+      if (!matchData) {
+        setMatch(null);
+        setLoading(false);
+        return;
+      }
+      setMatch(matchData);
       
       const { data: slotsData } = await supabase.from('slots_public').select('*').eq('match_id', matchId).order('id');
       if (slotsData) setSlots(slotsData);
