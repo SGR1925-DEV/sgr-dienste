@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { fetchAdmin } from '@/lib/admin-client';
 import { useRouter } from 'next/navigation';
 import { Match, ServiceType, Slot, ServiceTypeMember } from '@/types';
 import { Plus, Settings, Trash2 } from 'lucide-react';
@@ -17,7 +18,8 @@ import { adminRemoveUser } from '@/app/actions';
 export default function AdminPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'settings'>('upcoming');
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'settings' | 'cancellations'>('upcoming');
+  const hasMountedRef = useRef(false);
   
   const [matches, setMatches] = useState<Match[]>([]);
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
@@ -29,7 +31,12 @@ export default function AdminPage() {
   const [editingMatchId, setEditingMatchId] = useState<number | null>(null); 
   const [editForm, setEditForm] = useState({ opponent: '', date: '', time: '14:30', location: 'Sportplatz Kasel', team: '1. Mannschaft' });
   const [editorSlots, setEditorSlots] = useState<Slot[]>([]); 
-  const [newSlotConfig, setNewSlotConfig] = useState<{ [key: string]: { count: number, time: string } }>({});
+  const [newSlotConfig, setNewSlotConfig] = useState<{ [key: string]: { count: number; time: string; startTime?: string; endTime?: string; durationMinutes?: number | null } }>({});
+  const [adminAction, setAdminAction] = useState<{ slotId: number | null; type: 'confirm' | 'reject' | null }>({
+    slotId: null,
+    type: null,
+  });
+  const [durationUpdateSlotId, setDurationUpdateSlotId] = useState<number | null>(null);
 
   // Dialog State
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -68,24 +75,100 @@ export default function AdminPage() {
     init();
   }, [router]);
 
-  const loadData = async () => {
-    const [mRes, sRes, membersRes, slotsRes] = await Promise.all([
-      supabase.from('matches').select('*').order('id', { ascending: false }),
-      supabase.from('service_types').select('*').order('id'),
-      supabase.from('service_type_members').select('*').order('order', { ascending: true }),
-      supabase.from('slots').select('*')
-    ]);
-    if (mRes.data) setMatches(mRes.data);
-    if (sRes.data) setServiceTypes(sRes.data);
-    if (membersRes.data) setServiceTypeMembers(membersRes.data);
-    if (slotsRes.data) setAllSlots(slotsRes.data);
-  };
+  const fetchAdminSlots = useCallback(async (matchId?: number) => {
+    const response = await fetchAdmin<Slot[]>('/api/admin/slots/list', {
+      match_id: matchId,
+    });
+    return response.data ?? [];
+  }, []);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [mRes, sRes, membersRes, slotsData] = await Promise.all([
+        supabase.from('matches').select('*').order('id', { ascending: false }),
+        supabase.from('service_types').select('*').order('id'),
+        supabase.from('service_type_members').select('*').order('order', { ascending: true }),
+        fetchAdminSlots()
+      ]);
+      if (mRes.data) setMatches(mRes.data);
+      if (sRes.data) setServiceTypes(sRes.data);
+      if (membersRes.data) setServiceTypeMembers(membersRes.data);
+      setAllSlots(slotsData);
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: 'Admin-Daten konnten nicht geladen werden.',
+        variant: 'error',
+      });
+    }
+  }, [fetchAdminSlots]);
+
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+    loadData();
+  }, [activeTab, loadData]);
+
+  const openCancellationSlots = useMemo(() => {
+    return allSlots.filter(slot => slot.cancellation_requested);
+  }, [allSlots]);
+
+  const matchById = useMemo(() => {
+    return new Map(matches.map(match => [match.id, match]));
+  }, [matches]);
+
+  const groupedCancellations = useMemo(() => {
+    const getSlotStartMinutes = (time: string) => {
+      const match = time.match(/(\d{1,2}):(\d{2})/);
+      if (!match) return Number.POSITIVE_INFINITY;
+      return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+    };
+
+    const groups = new Map<number, { matchId: number; match?: Match; matchDate: Date | null; slots: Slot[] }>();
+
+    openCancellationSlots.forEach(slot => {
+      const existing = groups.get(slot.match_id);
+      if (existing) {
+        existing.slots.push(slot);
+        return;
+      }
+
+      const match = matchById.get(slot.match_id);
+      groups.set(slot.match_id, {
+        matchId: slot.match_id,
+        match,
+        matchDate: match ? parseMatchDate(match.date) : null,
+        slots: [slot],
+      });
+    });
+
+    const groupArray = Array.from(groups.values());
+    groupArray.sort((a, b) => {
+      const dateA = a.matchDate ? a.matchDate.getTime() : Number.POSITIVE_INFINITY;
+      const dateB = b.matchDate ? b.matchDate.getTime() : Number.POSITIVE_INFINITY;
+      if (dateA !== dateB) return dateA - dateB;
+      return a.matchId - b.matchId;
+    });
+
+    return groupArray.map(group => ({
+      ...group,
+      slots: group.slots.slice().sort((a, b) => {
+        const timeA = getSlotStartMinutes(a.time);
+        const timeB = getSlotStartMinutes(b.time);
+        if (timeA !== timeB) return timeA - timeB;
+        return a.id - b.id;
+      }),
+    }));
+  }, [openCancellationSlots, matchById]);
 
   // Helper für Statistik in der Liste
   const getMatchStats = (matchId: number) => {
     const matchSlots = allSlots.filter(s => s.match_id === matchId);
     const total = matchSlots.length;
-    const filled = matchSlots.filter(s => s.user_name).length;
+    const filled = matchSlots.filter(s => s.user_contact || s.user_name).length;
     const open = total - filled;
     return { total, filled, open };
   };
@@ -147,8 +230,17 @@ export default function AdminPage() {
         team: match.team || '1. Mannschaft'
       });
       
-      const { data } = await supabase.from('slots').select('*').eq('match_id', match.id).order('id');
-      if (data) setEditorSlots(data);
+      try {
+        const data = await fetchAdminSlots(match.id);
+        setEditorSlots(data);
+      } catch (error) {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Fehler',
+          message: 'Slots konnten nicht geladen werden.',
+          variant: 'error',
+        });
+      }
     } else {
       setEditingMatchId(null);
       const today = new Date().toISOString().split('T')[0];
@@ -158,10 +250,69 @@ export default function AdminPage() {
     
     // Config Reset
     const initialConfig: any = {};
-    serviceTypes.forEach(t => { initialConfig[t.name] = { count: t.default_count || 1, time: '14:00 - Ende' }; });
+    serviceTypes.forEach(t => { 
+      initialConfig[t.name] = { 
+        count: t.default_count || 1, 
+        time: '14:00 - Ende', 
+        startTime: '14:00',
+        endTime: 'Ende',
+        durationMinutes: null,
+      }; 
+    });
     setNewSlotConfig(initialConfig);
     
     setIsEditorOpen(true);
+  };
+
+  const normalizeDurationMinutes = (value: number | null | undefined) => {
+    if (!value || value <= 0 || Number.isNaN(value)) return null;
+    return Math.round(value);
+  };
+
+  const calculateDurationFromTime = (time: string): number | null => {
+    if (!time || !time.trim()) return null;
+    if (time.toLowerCase().includes('ende')) {
+      return 120;
+    }
+
+    const times = time.match(/(\d{1,2}):(\d{2})/g);
+    if (!times || times.length < 2) return null;
+
+    const [start, end] = times;
+    const [startHours, startMinutes] = start.split(':').map(Number);
+    const [endHours, endMinutes] = end.split(':').map(Number);
+
+    if ([startHours, startMinutes, endHours, endMinutes].some(value => Number.isNaN(value))) {
+      return null;
+    }
+
+    const startTotal = startHours * 60 + startMinutes;
+    const endTotal = endHours * 60 + endMinutes;
+    let diff = endTotal - startTotal;
+    if (diff < 0) diff += 24 * 60;
+
+    return diff > 0 ? diff : null;
+  };
+
+  const buildTimeRange = (startTime?: string, endTime?: string) => {
+    if (!startTime) return '';
+    const endLabel = endTime && endTime.trim().length > 0 ? endTime : 'Ende';
+    return `${startTime} - ${endLabel}`;
+  };
+
+  const reloadEditorSlots = async () => {
+    if (!editingMatchId) return;
+    try {
+      const data = await fetchAdminSlots(editingMatchId);
+      setEditorSlots(data);
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: 'Slots konnten nicht geladen werden.',
+        variant: 'error',
+      });
+    }
   };
 
   const saveMatchMetadata = async () => {
@@ -235,23 +386,36 @@ export default function AdminPage() {
     
     const config = newSlotConfig[category];
     const count = config?.count || 1;
-    const time = config?.time || '14:00 - Ende';
+    const time = buildTimeRange(config?.startTime, config?.endTime) || config?.time || '14:00 - Ende';
+    const normalizedDuration = normalizeDurationMinutes(config?.durationMinutes ?? null);
+    const autoDuration = normalizedDuration ?? calculateDurationFromTime(time);
+    const durationMinutes = normalizeDurationMinutes(autoDuration);
 
     // Erstelle unabhängige Objekte für jeden Slot (statt Array.fill mit gleicher Referenz)
     const slotsToInsert = Array.from({ length: count }, () => ({ 
         match_id: editingMatchId, 
         category: category, 
         time: time, 
-        user_name: null 
+        user_name: null,
+        duration_minutes: durationMinutes,
     }));
     
-    await supabase.from('slots').insert(slotsToInsert);
-    
-    const { data } = await supabase.from('slots').select('*').eq('match_id', editingMatchId).order('id');
-    if (data) {
-        setEditorSlots(data);
-        loadData();
+    try {
+      await Promise.all(
+        slotsToInsert.map(slot => fetchAdmin('/api/admin/slots/create', slot))
+      );
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: 'Slots konnten nicht erstellt werden.',
+        variant: 'error',
+      });
+      return;
     }
+
+    await reloadEditorSlots();
+    loadData();
   };
 
   const deleteSlot = async (slotId: number, userName: string | null) => {
@@ -266,8 +430,7 @@ export default function AdminPage() {
           const result = await adminRemoveUser(slotId);
           if (result.success) {
             // Reload slots for this match
-            const { data } = await supabase.from('slots').select('*').eq('match_id', editingMatchId).order('id');
-            if (data) setEditorSlots(data);
+            await reloadEditorSlots();
             await loadData();
             setAlertDialog({
               isOpen: true,
@@ -294,13 +457,123 @@ export default function AdminPage() {
         message: 'Diesen leeren Slot wirklich entfernen?',
         variant: 'danger',
         onConfirm: async () => {
-          await supabase.from('slots').delete().eq('id', slotId);
-          setEditorSlots(current => current.filter(s => s.id !== slotId));
-          await loadData();
+          try {
+            await fetchAdmin('/api/admin/slots/delete', { id: slotId });
+            setEditorSlots(current => current.filter(s => s.id !== slotId));
+            await loadData();
+          } catch (error) {
+            setAlertDialog({
+              isOpen: true,
+              title: 'Fehler',
+              message: error instanceof Error ? error.message : 'Slot konnte nicht gelöscht werden.',
+              variant: 'error',
+            });
+          }
           setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         },
       });
     }
+  };
+
+  const handleConfirmCancellation = async (slotId: number) => {
+    if (adminAction.type) return;
+    setAdminAction({ slotId, type: 'confirm' });
+
+    try {
+      await fetchAdmin('/api/admin/slots/confirm-cancellation', { slotId });
+      await reloadEditorSlots();
+      await loadData();
+      setAlertDialog({
+        isOpen: true,
+        title: 'Austragung bestätigt',
+        message: 'Der Slot ist jetzt wieder frei.',
+        variant: 'success',
+      });
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: error instanceof Error ? error.message : 'Fehler beim Bestätigen der Austragung.',
+        variant: 'error',
+      });
+    }
+
+    setAdminAction({ slotId: null, type: null });
+  };
+
+  const handleRejectCancellation = async (slotId: number) => {
+    if (adminAction.type) return;
+    setAdminAction({ slotId, type: 'reject' });
+
+    try {
+      await fetchAdmin('/api/admin/slots/reject-cancellation', { slotId });
+      await reloadEditorSlots();
+      await loadData();
+      setAlertDialog({
+        isOpen: true,
+        title: 'Anfrage abgelehnt',
+        message: 'Die Austragungsanfrage wurde zurückgesetzt.',
+        variant: 'success',
+      });
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: error instanceof Error ? error.message : 'Fehler beim Ablehnen der Anfrage.',
+        variant: 'error',
+      });
+    }
+
+    setAdminAction({ slotId: null, type: null });
+  };
+
+  const updateSlotDurationInState = (slotId: number, durationMinutes: number | null) => {
+    setEditorSlots(current =>
+      current.map(slot => (slot.id === slotId ? { ...slot, duration_minutes: durationMinutes } : slot))
+    );
+    setAllSlots(current =>
+      current.map(slot => (slot.id === slotId ? { ...slot, duration_minutes: durationMinutes } : slot))
+    );
+  };
+
+  const handleUpdateSlotDuration = async (slotId: number, durationMinutes: number | null) => {
+    if (durationUpdateSlotId) return;
+
+    const normalizedDuration = normalizeDurationMinutes(durationMinutes);
+    const currentSlot = editorSlots.find(slot => slot.id === slotId);
+    if (currentSlot && currentSlot.duration_minutes === normalizedDuration) {
+      return;
+    }
+
+    setDurationUpdateSlotId(slotId);
+
+    try {
+      await fetchAdmin('/api/admin/slots/update', { id: slotId, duration_minutes: normalizedDuration });
+      updateSlotDurationInState(slotId, normalizedDuration);
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: error instanceof Error ? error.message : 'Fehler beim Aktualisieren der Dauer.',
+        variant: 'error',
+      });
+    }
+
+    setDurationUpdateSlotId(null);
+  };
+
+  const handleAutoFillSlotDuration = async (slotId: number, time: string) => {
+    const autoDuration = calculateDurationFromTime(time);
+    if (!autoDuration) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Dauer nicht erkannt',
+        message: 'Die Zeit konnte nicht automatisch ausgewertet werden.',
+        variant: 'info',
+      });
+      return;
+    }
+    await handleUpdateSlotDuration(slotId, autoDuration);
   };
 
   const handleFormChange = (field: string, value: string) => {
@@ -312,13 +585,65 @@ export default function AdminPage() {
     setEditForm(prev => ({ ...prev, date: isoString }));
   };
 
-  const handleSlotConfigChange = (category: string, field: 'count' | 'time', value: number | string) => {
+  const handleSlotConfigChange = (category: string, field: 'count' | 'time' | 'durationMinutes' | 'startTime' | 'endTime', value: number | string | null) => {
+    setNewSlotConfig(prev => {
+      const current = prev[category];
+      if (!current) return prev;
+
+      const nextConfig = { ...current, [field]: value };
+
+      if (field === 'startTime' || field === 'endTime') {
+        const startTime = field === 'startTime' ? String(value) : current.startTime;
+        const endTime = field === 'endTime' ? String(value) : current.endTime;
+        nextConfig.startTime = startTime;
+        nextConfig.endTime = endTime;
+        nextConfig.time = buildTimeRange(startTime, endTime);
+      }
+
+      if (field === 'time' && !current.durationMinutes) {
+        const autoDuration = calculateDurationFromTime(String(value));
+        if (autoDuration) {
+          nextConfig.durationMinutes = autoDuration;
+        }
+      }
+
+      if ((field === 'startTime' || field === 'endTime') && !current.durationMinutes) {
+        const autoDuration = calculateDurationFromTime(nextConfig.time);
+        if (autoDuration) {
+          nextConfig.durationMinutes = autoDuration;
+        }
+      }
+
+      if (field === 'durationMinutes') {
+        nextConfig.durationMinutes = normalizeDurationMinutes(value as number | null);
+      }
+
+      return {
+        ...prev,
+        [category]: nextConfig,
+      };
+    });
+  };
+
+  const handleAutoDurationForConfig = (category: string) => {
+    const current = newSlotConfig[category];
+    if (!current) return;
+    const autoDuration = calculateDurationFromTime(current.time);
+    if (!autoDuration) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Dauer nicht erkannt',
+        message: 'Die Zeit konnte nicht automatisch ausgewertet werden.',
+        variant: 'info',
+      });
+      return;
+    }
     setNewSlotConfig(prev => ({
       ...prev,
       [category]: {
         ...prev[category],
-        [field]: value
-      }
+        durationMinutes: autoDuration,
+      },
     }));
   };
 
@@ -367,7 +692,18 @@ export default function AdminPage() {
       variant: 'danger',
       onConfirm: async () => {
         // Zuerst alle Slots löschen (wegen Foreign Key Constraint)
-        await supabase.from('slots').delete().eq('match_id', id);
+        try {
+          await fetchAdmin('/api/admin/slots/delete-by-match', { match_id: id });
+        } catch (error) {
+          setAlertDialog({
+            isOpen: true,
+            title: 'Fehler',
+            message: error instanceof Error ? error.message : 'Slots konnten nicht gelöscht werden.',
+            variant: 'error',
+          });
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+          return;
+        }
         // Dann das Match löschen
         await supabase.from('matches').delete().eq('id', id);
         await loadData();
@@ -400,11 +736,23 @@ export default function AdminPage() {
           onSaveMatchMetadata={saveMatchMetadata}
           onAddSlotsToMatch={addSlotsToMatch}
           onDeleteSlot={deleteSlot}
+          onConfirmCancellation={handleConfirmCancellation}
+          onRejectCancellation={handleRejectCancellation}
+          onAutoDurationForConfig={handleAutoDurationForConfig}
+          onUpdateSlotDuration={handleUpdateSlotDuration}
+          onAutoFillSlotDuration={handleAutoFillSlotDuration}
+          durationUpdateSlotId={durationUpdateSlotId}
+          adminActionSlotId={adminAction.slotId}
+          adminActionType={adminAction.type}
           onSlotConfigChange={handleSlotConfigChange}
         />
       ) : (
         <div className="min-h-screen bg-[#F2F2F7] pb-24">
-      <AdminHeader activeTab={activeTab} onTabChange={setActiveTab} />
+      <AdminHeader
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        cancellationCount={openCancellationSlots.length}
+      />
 
       <div className="max-w-md mx-auto px-6 space-y-8">
         {(activeTab === 'upcoming' || activeTab === 'past') && (
@@ -461,6 +809,91 @@ export default function AdminPage() {
               })}
             </div>
           </>
+        )}
+        {activeTab === 'cancellations' && (
+          <div className="space-y-3 pb-10">
+            {groupedCancellations.length === 0 ? (
+              <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-center text-slate-500 text-sm">
+                Keine offenen Austragungen 🎉
+              </div>
+            ) : (
+              groupedCancellations.map(group => (
+                <div key={group.matchId} className="space-y-2">
+                  <div className="flex items-center justify-between px-2">
+                    <div>
+                      <div className="font-bold text-slate-800 text-sm">
+                        {group.match ? group.match.opponent : `Match #${group.matchId}`}
+                      </div>
+                      <div className="text-[11px] font-medium text-slate-400">
+                        {group.match ? `${formatDisplayDate(group.match.date)} • ${group.match.time}` : 'Unbekanntes Spiel'}
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                      {group.slots.length}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {group.slots.map(slot => {
+                      const isConfirming = adminAction.type === 'confirm' && adminAction.slotId === slot.id;
+                      const isRejecting = adminAction.type === 'reject' && adminAction.slotId === slot.id;
+                      const isActionPending = isConfirming || isRejecting;
+
+                      return (
+                        <div
+                          key={slot.id}
+                          className="bg-white p-4 rounded-2xl border border-orange-100 shadow-sm"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="text-[11px] font-bold text-slate-700">
+                                {slot.category} • {slot.time}
+                              </div>
+                              <div className="text-[11px] text-slate-600 mt-2">
+                                {slot.user_name || 'Helfer'}
+                              </div>
+                              {slot.user_contact && (
+                                <a
+                                  href={`mailto:${slot.user_contact}`}
+                                  className="text-[11px] text-blue-600 font-semibold hover:underline"
+                                >
+                                  {slot.user_contact}
+                                </a>
+                              )}
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              <button
+                                onClick={() => handleConfirmCancellation(slot.id)}
+                                disabled={isActionPending}
+                                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
+                                  isActionPending
+                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 active:scale-95'
+                                }`}
+                              >
+                                {isConfirming ? 'Bestätige...' : 'Bestätigen'}
+                              </button>
+                              <button
+                                onClick={() => handleRejectCancellation(slot.id)}
+                                disabled={isActionPending}
+                                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
+                                  isActionPending
+                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                    : 'bg-orange-50 text-orange-700 hover:bg-orange-100 active:scale-95'
+                                }`}
+                              >
+                                {isRejecting ? 'Lehne ab...' : 'Ablehnen'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         )}
         {activeTab === 'settings' && (
           <ServiceTypeManager

@@ -1,21 +1,23 @@
 'use client';
 
-import { Calendar, Settings, LogOut, History } from 'lucide-react';
+import { Calendar, Settings, LogOut, History, AlertCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 
 interface AdminHeaderProps {
-  activeTab: 'upcoming' | 'past' | 'settings';
-  onTabChange: (tab: 'upcoming' | 'past' | 'settings') => void;
+  activeTab: 'upcoming' | 'past' | 'settings' | 'cancellations';
+  onTabChange: (tab: 'upcoming' | 'past' | 'settings' | 'cancellations') => void;
+  cancellationCount: number;
 }
 
 /**
  * AdminHeader Component
  * Header with logout button and tab switcher for admin panel
  */
-export default function AdminHeader({ activeTab, onTabChange }: AdminHeaderProps) {
+export default function AdminHeader({ activeTab, onTabChange, cancellationCount }: AdminHeaderProps) {
   const router = useRouter();
+  const displayCount = cancellationCount > 99 ? '99+' : `${cancellationCount}`;
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -42,6 +44,20 @@ export default function AdminHeader({ activeTab, onTabChange }: AdminHeaderProps
           )}
         >
           <Calendar className="w-4 h-4" /> Kommende
+        </button>
+        <button 
+          onClick={() => onTabChange('cancellations')} 
+          className={clsx(
+            "flex-1 py-2.5 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2",
+            activeTab === 'cancellations' ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white"
+          )}
+        >
+          <AlertCircle className="w-4 h-4" /> Austragungen
+          {cancellationCount > 0 && (
+            <span className="ml-1 inline-flex items-center justify-center min-w-[18px] h-4 px-1.5 text-[10px] font-black bg-red-500 text-white rounded-full">
+              {displayCount}
+            </span>
+          )}
         </button>
         <button 
           onClick={() => onTabChange('past')} 
