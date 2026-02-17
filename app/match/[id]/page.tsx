@@ -36,14 +36,32 @@ export default function MatchDetail() {
     message: '',
     variant: 'info' as 'info' | 'success' | 'error',
   });
+  const [slotsError, setSlotsError] = useState<string | null>(null);
 
   useEffect(() => {
+    const matchIdNum = Number(params.id);
+    if (!Number.isInteger(matchIdNum) || matchIdNum < 1) {
+      setLoading(false);
+      return;
+    }
+
     const fetchData = async () => {
-      const { data: matchData } = await supabase.from('matches').select('*').eq('id', matchId).single();
+      setSlotsError(null);
+      const { data: matchData } = await supabase.from('matches').select('*').eq('id', matchIdNum).single();
       if (matchData) setMatch(matchData);
-      
-      const { data: slotsData } = await supabase.from('slots').select('*').eq('match_id', matchId).order('id');
-      if (slotsData) setSlots(slotsData);
+
+      const { data: slotsData, error: slotsErr } = await supabase
+        .from('slots')
+        .select('*')
+        .eq('match_id', matchIdNum)
+        .order('id');
+      if (slotsErr) {
+        console.error('Slots laden fehlgeschlagen:', slotsErr);
+        setSlotsError(slotsErr.message || 'Dienste konnten nicht geladen werden.');
+        setSlots([]);
+      } else {
+        setSlots(slotsData ?? []);
+      }
 
       const [typesRes, membersRes] = await Promise.all([
         supabase.from('service_types').select('*').order('id'),
@@ -51,18 +69,17 @@ export default function MatchDetail() {
       ]);
       if (typesRes.data) setServiceTypes(typesRes.data);
       if (membersRes.data) setServiceTypeMembers(membersRes.data);
-      
+
       setLoading(false);
     };
 
-    // Echtzeit-Updates
-    const channel = supabase.channel(`match-${matchId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'slots', filter: `match_id=eq.${matchId}` }, () => fetchData())
+    const channel = supabase.channel(`match-${matchIdNum}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'slots', filter: `match_id=eq.${matchIdNum}` }, () => fetchData())
       .subscribe();
 
     fetchData();
     return () => { supabase.removeChannel(channel); };
-  }, [matchId]);
+  }, [params.id]);
 
   const handleSignUp = async () => {
     if (!selectedSlot || inputName.length < 2) {
@@ -209,6 +226,11 @@ export default function MatchDetail() {
       </div>
 
       {/* Slots Liste */}
+      {slotsError && (
+        <div className="max-w-md mx-auto px-4 mb-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-sm text-amber-800">
+          {slotsError} Prüfe die Konsole (F12) oder Supabase-Einstellungen (RLS, Tabelle &quot;slots&quot;).
+        </div>
+      )}
       <SlotList slots={slots} onSlotClick={setSelectedSlot} onRequestCancellation={handleRequestCancellation} />
 
       {/* Eintragen Modal */}

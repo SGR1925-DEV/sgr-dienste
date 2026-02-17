@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { Match, ServiceType, Slot, ServiceTypeMember } from '@/types';
-import { Plus, Settings, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { parseDisplayDateToISO, formatDateForDisplay, formatDisplayDate, dateToISOString, parseMatchDate } from '@/lib/utils';
 import AdminHeader from '@/components/admin/AdminHeader';
 import MatchEditor from '@/components/admin/MatchEditor';
@@ -452,8 +452,9 @@ export default function AdminPage() {
                       >
                         <Trash2 className="w-5 h-5" />
                       </button>
-                      <div className="bg-slate-50 p-2 rounded-xl text-slate-300">
-                        <Settings className="w-5 h-5" />
+                      <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-2 rounded-xl text-slate-500">
+                        <Pencil className="w-4 h-4" />
+                        <span className="text-xs font-bold">Bearbeiten</span>
                       </div>
                     </div>
                   </div>

@@ -26,7 +26,18 @@ interface SlotListProps {
  * Displays service slots grouped by category
  */
 export default function SlotList({ slots, onSlotClick, onRequestCancellation }: SlotListProps) {
-  const categories = Array.from(new Set(slots.map(s => s.category)));
+  const categories = Array.from(new Set(slots.map(s => s.category).filter(Boolean)));
+
+  if (slots.length === 0) {
+    return (
+      <div className="max-w-md mx-auto px-4">
+        <div className="bg-white rounded-3xl p-8 text-center shadow-sm border border-slate-100">
+          <p className="text-slate-500 font-medium">Noch keine Dienste für dieses Spiel.</p>
+          <p className="text-sm text-slate-400 mt-1">Im Admin-Bereich können Dienste angelegt werden.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-md mx-auto px-4 space-y-8">
@@ -45,7 +56,8 @@ export default function SlotList({ slots, onSlotClick, onRequestCancellation }: 
           <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100/50">
             {slots.filter(s => s.category === cat).map((slot, idx) => {
               const isTaken = !!slot.user_name;
-              const hasCancellationRequest = slot.cancellation_requested;
+              const hasCancellationRequest = !!slot.cancellation_requested;
+              const timeLabel = slot.time ? String(slot.time).split(' - ')[0]?.replace(' Uhr', '') ?? '–' : '–';
               
               return (
                 <div 
@@ -62,7 +74,7 @@ export default function SlotList({ slots, onSlotClick, onRequestCancellation }: 
                       "w-12 h-12 rounded-2xl flex items-center justify-center text-xs font-bold shadow-sm border",
                       isTaken ? "bg-white border-slate-100 text-slate-300" : "bg-blue-50 border-blue-100 text-blue-600"
                     )}>
-                      {slot.time.split(' - ')[0].replace(' Uhr', '')}
+                      {timeLabel}
                     </div>
                     
                     <div className="flex-1">
@@ -82,7 +94,7 @@ export default function SlotList({ slots, onSlotClick, onRequestCancellation }: 
                       ) : (
                         <div className="flex flex-col">
                           <span className="text-sm font-bold text-slate-600">Freier Dienst</span>
-                          <span className="text-[10px] text-slate-400">{slot.time} Uhr</span>
+                          <span className="text-[10px] text-slate-400">{slot.time ? `${slot.time} Uhr` : '–'}</span>
                         </div>
                       )}
                     </div>
