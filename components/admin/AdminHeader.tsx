@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 interface AdminHeaderProps {
   activeTab: 'upcoming' | 'past' | 'settings' | 'cancellations' | 'trash';
   onTabChange: (tab: 'upcoming' | 'past' | 'settings' | 'cancellations' | 'trash') => void;
-  cancellationCount: number;
+  cancellationCount: number; 
 }
 
 /**
