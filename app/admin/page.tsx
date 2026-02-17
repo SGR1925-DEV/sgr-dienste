@@ -1,0 +1,1046 @@
+'use client';
+
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { supabase } from '@/lib/supabase';
+import { fetchAdmin } from '@/lib/admin-client';
+import { useRouter } from 'next/navigation';
+import { Match, ServiceType, Slot, ServiceTypeMember } from '@/types';
+import { Plus, Settings, Trash2 } from 'lucide-react';
+import { parseDisplayDateToISO, formatDateForDisplay, formatDisplayDate, dateToISOString, getMatchDateForComparison, getMatchDisplayDate } from '@/lib/utils';
+import AdminHeader from '@/components/admin/AdminHeader';
+import MatchEditor from '@/components/admin/MatchEditor';
+import ServiceTypeManager from '@/components/admin/ServiceTypeManager';
+import StatusBadge from '@/components/ui/StatusBadge';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import AlertDialog from '@/components/ui/AlertDialog';
+import { adminRemoveUser } from '@/app/actions';
+
+export default function AdminPage() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'settings' | 'cancellations' | 'trash'>('upcoming');
+  const hasMountedRef = useRef(false);
+  
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
+  const [serviceTypeMembers, setServiceTypeMembers] = useState<ServiceTypeMember[]>([]);
+  const [allSlots, setAllSlots] = useState<Slot[]>([]); 
+
+  // Editor State
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editingMatchId, setEditingMatchId] = useState<number | null>(null); 
+  const [editForm, setEditForm] = useState({ opponent: '', date: '', time: '14:30', location: 'Sportplatz Kasel', team: '1. Mannschaft' });
+  const [editorSlots, setEditorSlots] = useState<Slot[]>([]); 
+  const [newSlotConfig, setNewSlotConfig] = useState<{ [key: string]: { count: number; time: string; startTime?: string; endTime?: string; durationMinutes?: number | null } }>({});
+  const [adminAction, setAdminAction] = useState<{ slotId: number | null; type: 'confirm' | 'reject' | null }>({
+    slotId: null,
+    type: null,
+  });
+  const [durationUpdateSlotId, setDurationUpdateSlotId] = useState<number | null>(null);
+
+  // Dialog State
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    variant?: 'default' | 'danger';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    variant: 'default',
+  });
+
+  const [alertDialog, setAlertDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    variant?: 'info' | 'success' | 'error';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    variant: 'info',
+  });
+
+  useEffect(() => {
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.push('/login'); return; }
+      await loadData();
+      setLoading(false);
+    };
+    init();
+  }, [router]);
+
+  const fetchAdminSlots = useCallback(async (matchId?: number) => {
+    const response = await fetchAdmin<Slot[]>('/api/admin/slots/list', {
+      match_id: matchId,
+    });
+    return response.data ?? [];
+  }, []);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [mRes, sRes, membersRes, slotsData] = await Promise.all([
+        supabase.from('matches').select('*').order('id', { ascending: false }),
+        supabase.from('service_types').select('*').order('id'),
+        supabase.from('service_type_members').select('*').order('order', { ascending: true }),
+        fetchAdminSlots()
+      ]);
+      if (mRes.data) setMatches(mRes.data);
+      if (sRes.data) setServiceTypes(sRes.data);
+      if (membersRes.data) setServiceTypeMembers(membersRes.data);
+      setAllSlots(slotsData);
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: 'Admin-Daten konnten nicht geladen werden.',
+        variant: 'error',
+      });
+    }
+  }, [fetchAdminSlots]);
+
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+    loadData();
+  }, [activeTab, loadData]);
+
+  const openCancellationSlots = useMemo(() => {
+    return allSlots.filter(slot => slot.cancellation_requested);
+  }, [allSlots]);
+
+  const matchById = useMemo(() => {
+    return new Map(matches.map(match => [match.id, match]));
+  }, [matches]);
+
+  const { activeMatches, deletedMatches } = useMemo(() => {
+    const active = matches.filter(match => !match.deleted_at);
+    const deleted = matches.filter(match => match.deleted_at);
+    return { activeMatches: active, deletedMatches: deleted };
+  }, [matches]);
+
+  const groupedCancellations = useMemo(() => {
+    const getSlotStartMinutes = (time: string) => {
+      const match = time.match(/(\d{1,2}):(\d{2})/);
+      if (!match) return Number.POSITIVE_INFINITY;
+      return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+    };
+
+    const groups = new Map<number, { matchId: number; match?: Match; matchDate: Date | null; slots: Slot[] }>();
+
+    openCancellationSlots.forEach(slot => {
+      const existing = groups.get(slot.match_id);
+      if (existing) {
+        existing.slots.push(slot);
+        return;
+      }
+
+      const match = matchById.get(slot.match_id);
+      groups.set(slot.match_id, {
+        matchId: slot.match_id,
+        match,
+        matchDate: match ? getMatchDateForComparison(match.match_date, match.date) : null,
+        slots: [slot],
+      });
+    });
+
+    const groupArray = Array.from(groups.values());
+    groupArray.sort((a, b) => {
+      const dateA = a.matchDate ? a.matchDate.getTime() : Number.POSITIVE_INFINITY;
+      const dateB = b.matchDate ? b.matchDate.getTime() : Number.POSITIVE_INFINITY;
+      if (dateA !== dateB) return dateA - dateB;
+      return a.matchId - b.matchId;
+    });
+
+    return groupArray.map(group => ({
+      ...group,
+      slots: group.slots.slice().sort((a, b) => {
+        const timeA = getSlotStartMinutes(a.time);
+        const timeB = getSlotStartMinutes(b.time);
+        if (timeA !== timeB) return timeA - timeB;
+        return a.id - b.id;
+      }),
+    }));
+  }, [openCancellationSlots, matchById]);
+
+  // Helper für Statistik in der Liste
+  const getMatchStats = (matchId: number) => {
+    const matchSlots = allSlots.filter(s => s.match_id === matchId);
+    const total = matchSlots.length;
+    const filled = matchSlots.filter(s => s.user_contact || s.user_name).length;
+    const open = total - filled;
+    return { total, filled, open };
+  };
+
+  // Filtere Spiele basierend auf Datum
+  const { upcomingMatches, pastMatches } = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const upcoming: Match[] = [];
+    const past: Match[] = [];
+    
+    activeMatches.forEach(match => {
+      const matchDate = getMatchDateForComparison(match.match_date, match.date);
+      if (!matchDate) {
+        // Falls Datum nicht geparst werden kann, behandle es als zukünftig
+        upcoming.push(match);
+        return;
+      }
+      
+      const matchDateOnly = new Date(matchDate.getFullYear(), matchDate.getMonth(), matchDate.getDate());
+      
+      if (matchDateOnly >= today) {
+        upcoming.push(match);
+      } else {
+        past.push(match);
+      }
+    });
+    
+    // Sortiere kommende Spiele aufsteigend (nächstes zuerst)
+    upcoming.sort((a, b) => {
+      const dateA = getMatchDateForComparison(a.match_date, a.date);
+      const dateB = getMatchDateForComparison(b.match_date, b.date);
+      if (!dateA || !dateB) return 0;
+      return dateA.getTime() - dateB.getTime();
+    });
+    
+    // Sortiere vergangene Spiele absteigend (neuestes zuerst)
+    past.sort((a, b) => {
+      const dateA = getMatchDateForComparison(a.match_date, a.date);
+      const dateB = getMatchDateForComparison(b.match_date, b.date);
+      if (!dateA || !dateB) return 0;
+      return dateB.getTime() - dateA.getTime();
+    });
+    
+    return { upcomingMatches: upcoming, pastMatches: past };
+  }, [activeMatches]);
+
+  const openEditor = async (match?: Match) => {
+    if (match) {
+      setEditingMatchId(match.id);
+      const isoDate = match.match_date || parseDisplayDateToISO(match.date);
+      
+      setEditForm({ 
+        opponent: match.opponent, 
+        date: isoDate || '', 
+        time: match.time, 
+        location: match.location || 'Sportplatz Kasel',
+        team: match.team || '1. Mannschaft'
+      });
+      
+      try {
+        const data = await fetchAdminSlots(match.id);
+        setEditorSlots(data);
+      } catch (error) {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Fehler',
+          message: 'Slots konnten nicht geladen werden.',
+          variant: 'error',
+        });
+      }
+    } else {
+      setEditingMatchId(null);
+      const today = new Date().toISOString().split('T')[0];
+      setEditForm({ opponent: '', date: today, time: '14:30', location: 'Sportplatz Kasel', team: '1. Mannschaft' });
+      setEditorSlots([]);
+    }
+    
+    // Config Reset
+    const initialConfig: any = {};
+    serviceTypes.forEach(t => { 
+      initialConfig[t.name] = { 
+        count: t.default_count || 1, 
+        time: '14:00 - Ende', 
+        startTime: '14:00',
+        endTime: 'Ende',
+        durationMinutes: null,
+      }; 
+    });
+    setNewSlotConfig(initialConfig);
+    
+    setIsEditorOpen(true);
+  };
+
+  const normalizeDurationMinutes = (value: number | null | undefined) => {
+    if (!value || value <= 0 || Number.isNaN(value)) return null;
+    return Math.round(value);
+  };
+
+  const calculateDurationFromTime = (time: string): number | null => {
+    if (!time || !time.trim()) return null;
+    if (time.toLowerCase().includes('ende')) {
+      return 120;
+    }
+
+    const times = time.match(/(\d{1,2}):(\d{2})/g);
+    if (!times || times.length < 2) return null;
+
+    const [start, end] = times;
+    const [startHours, startMinutes] = start.split(':').map(Number);
+    const [endHours, endMinutes] = end.split(':').map(Number);
+
+    if ([startHours, startMinutes, endHours, endMinutes].some(value => Number.isNaN(value))) {
+      return null;
+    }
+
+    const startTotal = startHours * 60 + startMinutes;
+    const endTotal = endHours * 60 + endMinutes;
+    let diff = endTotal - startTotal;
+    if (diff < 0) diff += 24 * 60;
+
+    return diff > 0 ? diff : null;
+  };
+
+  const buildTimeRange = (startTime?: string, endTime?: string) => {
+    if (!startTime) return '';
+    const endLabel = endTime && endTime.trim().length > 0 ? endTime : 'Ende';
+    return `${startTime} - ${endLabel}`;
+  };
+
+  const reloadEditorSlots = async () => {
+    if (!editingMatchId) return;
+    try {
+      const data = await fetchAdminSlots(editingMatchId);
+      setEditorSlots(data);
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: 'Slots konnten nicht geladen werden.',
+        variant: 'error',
+      });
+    }
+  };
+
+  const saveMatchMetadata = async () => {
+    if (!editForm.opponent) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: 'Gegner fehlt',
+        variant: 'error',
+      });
+      return;
+    }
+    
+    // editForm.date ist bereits im ISO-Format (YYYY-MM-DD) vom date-Input
+    const formattedDate = editForm.date ? formatDateForDisplay(editForm.date) : null;
+    if(!formattedDate) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: 'Bitte Datum wählen',
+        variant: 'error',
+      });
+      return;
+    }
+
+    const kickoffAt = editForm.date && editForm.time
+      ? `${editForm.date}T${editForm.time}:00`
+      : null;
+
+    const payload = { 
+        opponent: editForm.opponent, 
+        date: formattedDate,
+        match_date: editForm.date || null,
+        kickoff_at: kickoffAt,
+        time: editForm.time, 
+        location: editForm.location,
+        team: editForm.team
+    };
+
+    let matchId = editingMatchId;
+    
+    if (matchId) {
+      await supabase.from('matches').update(payload).eq('id', matchId);
+    } else {
+      const { data, error } = await supabase.from('matches').insert([payload]).select().single();
+      if (error || !data) {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Fehler',
+          message: 'Fehler beim Speichern',
+          variant: 'error',
+        });
+        return;
+      }
+      matchId = data.id;
+      setEditingMatchId(matchId);
+    }
+    await loadData();
+    setAlertDialog({
+      isOpen: true,
+      title: 'Erfolg',
+      message: 'Daten gespeichert.',
+      variant: 'success',
+    });
+  };
+
+  const addSlotsToMatch = async (category: string) => {
+    if (!editingMatchId) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Hinweis',
+        message: 'Bitte erst die Rahmendaten speichern!',
+        variant: 'info',
+      });
+      return;
+    }
+    
+    const config = newSlotConfig[category];
+    const count = config?.count || 1;
+    const time = buildTimeRange(config?.startTime, config?.endTime) || config?.time || '14:00 - Ende';
+    const normalizedDuration = normalizeDurationMinutes(config?.durationMinutes ?? null);
+    const autoDuration = normalizedDuration ?? calculateDurationFromTime(time);
+    const durationMinutes = normalizeDurationMinutes(autoDuration);
+
+    // Erstelle unabhängige Objekte für jeden Slot (statt Array.fill mit gleicher Referenz)
+    const slotsToInsert = Array.from({ length: count }, () => ({ 
+        match_id: editingMatchId, 
+        category: category, 
+        time: time, 
+        user_name: null,
+        duration_minutes: durationMinutes,
+    }));
+    
+    try {
+      await Promise.all(
+        slotsToInsert.map(slot => fetchAdmin('/api/admin/slots/create', slot))
+      );
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: 'Slots konnten nicht erstellt werden.',
+        variant: 'error',
+      });
+      return;
+    }
+
+    await reloadEditorSlots();
+    loadData();
+  };
+
+  const deleteSlot = async (slotId: number, userName: string | null) => {
+    // If slot has a user, use adminRemoveUser (which sends email)
+    if (userName) {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Nutzer austragen',
+        message: `Nutzer informieren und austragen?\n\n${userName} wird per E-Mail benachrichtigt.`,
+        variant: 'danger',
+        onConfirm: async () => {
+          const result = await adminRemoveUser(slotId);
+          if (result.success) {
+            // Reload slots for this match
+            await reloadEditorSlots();
+            await loadData();
+            setAlertDialog({
+              isOpen: true,
+              title: 'Erfolg',
+              message: 'Nutzer wurde ausgetragen und per E-Mail benachrichtigt.',
+              variant: 'success',
+            });
+          } else {
+            setAlertDialog({
+              isOpen: true,
+              title: 'Fehler',
+              message: result.error || 'Fehler beim Austragen des Nutzers.',
+              variant: 'error',
+            });
+          }
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        },
+      });
+    } else {
+      // Empty slot: just delete it
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Slot löschen',
+        message: 'Diesen leeren Slot wirklich entfernen?',
+        variant: 'danger',
+        onConfirm: async () => {
+          try {
+            await fetchAdmin('/api/admin/slots/delete', { id: slotId });
+            setEditorSlots(current => current.filter(s => s.id !== slotId));
+            await loadData();
+          } catch (error) {
+            setAlertDialog({
+              isOpen: true,
+              title: 'Fehler',
+              message: error instanceof Error ? error.message : 'Slot konnte nicht gelöscht werden.',
+              variant: 'error',
+            });
+          }
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        },
+      });
+    }
+  };
+
+  const handleConfirmCancellation = async (slotId: number) => {
+    if (adminAction.type) return;
+    setAdminAction({ slotId, type: 'confirm' });
+
+    try {
+      await fetchAdmin('/api/admin/slots/confirm-cancellation', { slotId });
+      await reloadEditorSlots();
+      await loadData();
+      setAlertDialog({
+        isOpen: true,
+        title: 'Austragung bestätigt',
+        message: 'Der Slot ist jetzt wieder frei.',
+        variant: 'success',
+      });
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: error instanceof Error ? error.message : 'Fehler beim Bestätigen der Austragung.',
+        variant: 'error',
+      });
+    }
+
+    setAdminAction({ slotId: null, type: null });
+  };
+
+  const handleRejectCancellation = async (slotId: number) => {
+    if (adminAction.type) return;
+    setAdminAction({ slotId, type: 'reject' });
+
+    try {
+      await fetchAdmin('/api/admin/slots/reject-cancellation', { slotId });
+      await reloadEditorSlots();
+      await loadData();
+      setAlertDialog({
+        isOpen: true,
+        title: 'Anfrage abgelehnt',
+        message: 'Die Austragungsanfrage wurde zurückgesetzt.',
+        variant: 'success',
+      });
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: error instanceof Error ? error.message : 'Fehler beim Ablehnen der Anfrage.',
+        variant: 'error',
+      });
+    }
+
+    setAdminAction({ slotId: null, type: null });
+  };
+
+  const updateSlotDurationInState = (slotId: number, durationMinutes: number | null) => {
+    setEditorSlots(current =>
+      current.map(slot => (slot.id === slotId ? { ...slot, duration_minutes: durationMinutes } : slot))
+    );
+    setAllSlots(current =>
+      current.map(slot => (slot.id === slotId ? { ...slot, duration_minutes: durationMinutes } : slot))
+    );
+  };
+
+  const handleUpdateSlotDuration = async (slotId: number, durationMinutes: number | null) => {
+    if (durationUpdateSlotId) return;
+
+    const normalizedDuration = normalizeDurationMinutes(durationMinutes);
+    const currentSlot = editorSlots.find(slot => slot.id === slotId);
+    if (currentSlot && currentSlot.duration_minutes === normalizedDuration) {
+      return;
+    }
+
+    setDurationUpdateSlotId(slotId);
+
+    try {
+      await fetchAdmin('/api/admin/slots/update', { id: slotId, duration_minutes: normalizedDuration });
+      updateSlotDurationInState(slotId, normalizedDuration);
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: error instanceof Error ? error.message : 'Fehler beim Aktualisieren der Dauer.',
+        variant: 'error',
+      });
+    }
+
+    setDurationUpdateSlotId(null);
+  };
+
+  const handleAutoFillSlotDuration = async (slotId: number, time: string) => {
+    const autoDuration = calculateDurationFromTime(time);
+    if (!autoDuration) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Dauer nicht erkannt',
+        message: 'Die Zeit konnte nicht automatisch ausgewertet werden.',
+        variant: 'info',
+      });
+      return;
+    }
+    await handleUpdateSlotDuration(slotId, autoDuration);
+  };
+
+  const handleFormChange = (field: string, value: string) => {
+    setEditForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleDateChange = (date: Date) => {
+    const isoString = dateToISOString(date);
+    setEditForm(prev => ({ ...prev, date: isoString }));
+  };
+
+  const handleSlotConfigChange = (category: string, field: 'count' | 'time' | 'durationMinutes' | 'startTime' | 'endTime', value: number | string | null) => {
+    setNewSlotConfig(prev => {
+      const current = prev[category];
+      if (!current) return prev;
+
+      const nextConfig = { ...current, [field]: value };
+
+      if (field === 'startTime' || field === 'endTime') {
+        const startTime = field === 'startTime' ? String(value) : current.startTime;
+        const endTime = field === 'endTime' ? String(value) : current.endTime;
+        nextConfig.startTime = startTime;
+        nextConfig.endTime = endTime;
+        nextConfig.time = buildTimeRange(startTime, endTime);
+      }
+
+      if (field === 'time' && !current.durationMinutes) {
+        const autoDuration = calculateDurationFromTime(String(value));
+        if (autoDuration) {
+          nextConfig.durationMinutes = autoDuration;
+        }
+      }
+
+      if ((field === 'startTime' || field === 'endTime') && !current.durationMinutes) {
+        const autoDuration = calculateDurationFromTime(nextConfig.time);
+        if (autoDuration) {
+          nextConfig.durationMinutes = autoDuration;
+        }
+      }
+
+      if (field === 'durationMinutes') {
+        nextConfig.durationMinutes = normalizeDurationMinutes(value as number | null);
+      }
+
+      return {
+        ...prev,
+        [category]: nextConfig,
+      };
+    });
+  };
+
+  const handleAutoDurationForConfig = (category: string) => {
+    const current = newSlotConfig[category];
+    if (!current) return;
+    const autoDuration = calculateDurationFromTime(current.time);
+    if (!autoDuration) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Dauer nicht erkannt',
+        message: 'Die Zeit konnte nicht automatisch ausgewertet werden.',
+        variant: 'info',
+      });
+      return;
+    }
+    setNewSlotConfig(prev => ({
+      ...prev,
+      [category]: {
+        ...prev[category],
+        durationMinutes: autoDuration,
+      },
+    }));
+  };
+
+  // Settings Actions
+  const [newServiceInput, setNewServiceInput] = useState('');
+  const addServiceType = async () => {
+    if(!newServiceInput) return;
+    await supabase.from('service_types').insert([{ name: newServiceInput, default_count: 1 }]);
+    setNewServiceInput('');
+    loadData();
+  };
+  const deleteServiceType = async (id: number) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Kategorie löschen',
+      message: 'Kategorie-Vorlage löschen?\n(Bestehende Dienste bleiben erhalten)',
+      variant: 'danger',
+      onConfirm: async () => {
+        await supabase.from('service_types').delete().eq('id', id);
+        loadData();
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      },
+    });
+  };
+  const addServiceTypeMember = async (serviceTypeId: number, name: string) => {
+    if (!name.trim()) return;
+    await supabase.from('service_type_members').insert([{ 
+      service_type_id: serviceTypeId, 
+      name: name.trim(),
+      order: 0
+    }]);
+    loadData();
+  };
+  const deleteServiceTypeMember = async (memberId: number) => {
+    await supabase.from('service_type_members').delete().eq('id', memberId);
+    loadData();
+  };
+
+  const softDeleteMatch = async (id: number, opponent: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Verhindert, dass der Click-Event weitergegeben wird
+    
+    setConfirmDialog({
+      isOpen: true,
+      title: 'In den Papierkorb verschieben',
+      message: `In den Papierkorb verschieben?\n\n"${opponent}" kann innerhalb von 7 Tagen wiederhergestellt werden.`,
+      variant: 'danger',
+      onConfirm: async () => {
+        const { error } = await supabase
+          .from('matches')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', id);
+        if (error) {
+          setAlertDialog({
+            isOpen: true,
+            title: 'Fehler',
+            message: error.message || 'Spiel konnte nicht verschoben werden.',
+            variant: 'error',
+          });
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+          return;
+        }
+        await loadData();
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      },
+    });
+  };
+
+  const restoreMatch = async (id: number) => {
+    try {
+      const { error } = await supabase
+        .from('matches')
+        .update({ deleted_at: null })
+        .eq('id', id);
+      if (error) throw error;
+      await loadData();
+    } catch (error) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Fehler',
+        message: error instanceof Error ? error.message : 'Spiel konnte nicht wiederhergestellt werden.',
+        variant: 'error',
+      });
+    }
+  };
+
+  const permanentDeleteMatch = async (id: number, opponent: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Spiel endgültig löschen',
+      message: `Spiel "${opponent}" endgültig löschen?\n\nDies kann nicht rückgängig gemacht werden und löscht alle zugehörigen Slots.`,
+      variant: 'danger',
+      onConfirm: async () => {
+        // Zuerst alle Slots löschen (wegen Foreign Key Constraint)
+        try {
+          await fetchAdmin('/api/admin/slots/delete-by-match', { match_id: id });
+        } catch (error) {
+          setAlertDialog({
+            isOpen: true,
+            title: 'Fehler',
+            message: error instanceof Error ? error.message : 'Slots konnten nicht gelöscht werden.',
+            variant: 'error',
+          });
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+          return;
+        }
+        const { error } = await supabase.from('matches').delete().eq('id', id);
+        if (error) {
+          setAlertDialog({
+            isOpen: true,
+            title: 'Fehler',
+            message: error.message || 'Spiel konnte nicht endgültig gelöscht werden.',
+            variant: 'error',
+          });
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+          return;
+        }
+        await loadData();
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      },
+    });
+  };
+
+  // Kombiniere alle Kategorien
+  const uniqueCategories = Array.from(new Set([
+    ...serviceTypes.map(t => t.name),
+    ...editorSlots.map(s => s.category)
+  ]));
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#F2F2F7]">Lade...</div>;
+
+  return (
+    <>
+      {isEditorOpen ? (
+        <MatchEditor
+          editingMatchId={editingMatchId}
+          editForm={editForm}
+          editorSlots={editorSlots}
+          serviceTypes={serviceTypes}
+          newSlotConfig={newSlotConfig}
+          uniqueCategories={uniqueCategories}
+          onClose={() => setIsEditorOpen(false)}
+          onFormChange={handleFormChange}
+          onDateChange={handleDateChange}
+          onSaveMatchMetadata={saveMatchMetadata}
+          onAddSlotsToMatch={addSlotsToMatch}
+          onDeleteSlot={deleteSlot}
+          onConfirmCancellation={handleConfirmCancellation}
+          onRejectCancellation={handleRejectCancellation}
+          onAutoDurationForConfig={handleAutoDurationForConfig}
+          onUpdateSlotDuration={handleUpdateSlotDuration}
+          onAutoFillSlotDuration={handleAutoFillSlotDuration}
+          durationUpdateSlotId={durationUpdateSlotId}
+          adminActionSlotId={adminAction.slotId}
+          adminActionType={adminAction.type}
+          onSlotConfigChange={handleSlotConfigChange}
+        />
+      ) : (
+        <div className="min-h-screen bg-[#F2F2F7] pb-24">
+      <AdminHeader
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        cancellationCount={openCancellationSlots.length}
+      />
+
+      <div className="max-w-md mx-auto px-6 space-y-8">
+        {(activeTab === 'upcoming' || activeTab === 'past') && (
+          <>
+            <button 
+              onClick={() => openEditor()} 
+              className="w-full py-4 bg-white rounded-3xl shadow-sm border border-slate-100 flex items-center justify-center gap-2 text-blue-600 font-bold active:scale-[0.98] transition-all"
+            >
+              <div className="w-8 h-8 bg-blue-50 rounded-full flex items-center justify-center">
+                <Plus className="w-5 h-5" />
+              </div>
+              Neues Spiel
+            </button>
+            <div className="space-y-3 pb-10">
+              {(activeTab === 'upcoming' ? upcomingMatches : pastMatches).map(match => {
+                const stats = getMatchStats(match.id);
+                return (
+                  <div 
+                    key={match.id} 
+                    onClick={() => openEditor(match)} 
+                    className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex justify-between items-center active:bg-slate-50 cursor-pointer transition-colors group"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="font-bold text-slate-800 text-lg">{match.opponent}</div>
+                        {match.team && (
+                          <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-full border border-blue-100">
+                            {match.team}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 text-xs font-bold text-slate-400 mt-1">
+                        <span>{getMatchDisplayDate(match.match_date, match.date)}</span>
+                        <span>{match.time}</span>
+                      </div>
+                      <div className="mt-2 inline-block">
+                        <StatusBadge openCount={stats.open} />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => softDeleteMatch(match.id, match.opponent, e)}
+                        className="p-2 rounded-lg text-slate-400 active:text-red-500 hover:text-red-500 hover:bg-red-50 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 touch-manipulation"
+                        title="In den Papierkorb verschieben"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                      <div className="bg-slate-50 p-2 rounded-xl text-slate-300">
+                        <Settings className="w-5 h-5" />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+        {activeTab === 'cancellations' && (
+          <div className="space-y-3 pb-10">
+            {groupedCancellations.length === 0 ? (
+              <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-center text-slate-500 text-sm">
+                Keine offenen Austragungen 🎉
+              </div>
+            ) : (
+              groupedCancellations.map(group => (
+                <div key={group.matchId} className="space-y-2">
+                  <div className="flex items-center justify-between px-2">
+                    <div>
+                      <div className="font-bold text-slate-800 text-sm">
+                        {group.match ? group.match.opponent : `Match #${group.matchId}`}
+                      </div>
+                      <div className="text-[11px] font-medium text-slate-400">
+                        {group.match ? `${getMatchDisplayDate(group.match.match_date, group.match.date)} • ${group.match.time}` : 'Unbekanntes Spiel'}
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                      {group.slots.length}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {group.slots.map(slot => {
+                      const isConfirming = adminAction.type === 'confirm' && adminAction.slotId === slot.id;
+                      const isRejecting = adminAction.type === 'reject' && adminAction.slotId === slot.id;
+                      const isActionPending = isConfirming || isRejecting;
+
+                      return (
+                        <div
+                          key={slot.id}
+                          className="bg-white p-4 rounded-2xl border border-orange-100 shadow-sm"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="text-[11px] font-bold text-slate-700">
+                                {slot.category} • {slot.time}
+                              </div>
+                              <div className="text-[11px] text-slate-600 mt-2">
+                                {slot.user_name || 'Helfer'}
+                              </div>
+                              {slot.user_contact && (
+                                <a
+                                  href={`mailto:${slot.user_contact}`}
+                                  className="text-[11px] text-blue-600 font-semibold hover:underline"
+                                >
+                                  {slot.user_contact}
+                                </a>
+                              )}
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              <button
+                                onClick={() => handleConfirmCancellation(slot.id)}
+                                disabled={isActionPending}
+                                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
+                                  isActionPending
+                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 active:scale-95'
+                                }`}
+                              >
+                                {isConfirming ? 'Bestätige...' : 'Bestätigen'}
+                              </button>
+                              <button
+                                onClick={() => handleRejectCancellation(slot.id)}
+                                disabled={isActionPending}
+                                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
+                                  isActionPending
+                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                    : 'bg-orange-50 text-orange-700 hover:bg-orange-100 active:scale-95'
+                                }`}
+                              >
+                                {isRejecting ? 'Lehne ab...' : 'Ablehnen'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+        {activeTab === 'trash' && (
+          <div className="space-y-3 pb-10">
+            {deletedMatches.length === 0 ? (
+              <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-center text-slate-500 text-sm">
+                Papierkorb ist leer.
+              </div>
+            ) : (
+              deletedMatches.map(match => (
+                <div
+                  key={match.id}
+                  className="bg-slate-50 p-4 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center text-slate-500"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="font-bold text-slate-600 text-lg">{match.opponent}</div>
+                      {match.team && (
+                        <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full border border-slate-200">
+                          {match.team}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 text-xs font-bold text-slate-400 mt-1">
+                      <span>{getMatchDisplayDate(match.match_date, match.date)}</span>
+                      <span>{match.time}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <button
+                      onClick={() => restoreMatch(match.id)}
+                      className="px-3 py-1.5 rounded-lg text-[11px] font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 active:scale-95 transition-colors"
+                    >
+                      ♻️ Wiederherstellen
+                    </button>
+                    <button
+                      onClick={() => permanentDeleteMatch(match.id, match.opponent)}
+                      className="px-3 py-1.5 rounded-lg text-[11px] font-bold bg-red-50 text-red-700 hover:bg-red-100 active:scale-95 transition-colors"
+                    >
+                      💥 Endgültig löschen
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+        {activeTab === 'settings' && (
+          <ServiceTypeManager
+            serviceTypes={serviceTypes}
+            serviceTypeMembers={serviceTypeMembers}
+            newServiceInput={newServiceInput}
+            onNewServiceInputChange={setNewServiceInput}
+            onAddServiceType={addServiceType}
+            onDeleteServiceType={deleteServiceType}
+            onAddMember={addServiceTypeMember}
+            onDeleteMember={deleteServiceTypeMember}
+          />
+        )}
+      </div>
+        </div>
+      )}
+
+      {/* Dialog Components - Always available */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        variant={confirmDialog.variant}
+        onConfirm={() => {
+          confirmDialog.onConfirm();
+        }}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      <AlertDialog
+        isOpen={alertDialog.isOpen}
+        title={alertDialog.title}
+        message={alertDialog.message}
+        variant={alertDialog.variant}
+        onClose={() => setAlertDialog(prev => ({ ...prev, isOpen: false }))}
+      />
+    </>
+  );
+}
