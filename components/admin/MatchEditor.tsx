@@ -352,15 +352,13 @@ export default function MatchEditor({
                               </button>
                             </div>
                           ) : (
-                            slot.user_name && (
-                              <button 
-                                onClick={() => onDeleteSlot(slot.id, slot.user_name)}
-                                className="text-slate-500 active:text-red-500 hover:text-red-500 active:bg-red-50 hover:bg-red-50 p-2 rounded-lg transition-colors touch-manipulation flex-shrink-0"
-                                title="Nutzer informieren und austragen"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )
+                            <button
+                              onClick={() => onDeleteSlot(slot.id, slot.user_name)}
+                              className="text-slate-500 active:text-red-500 hover:text-red-500 active:bg-red-50 hover:bg-red-50 p-2 rounded-lg transition-colors touch-manipulation flex-shrink-0"
+                              title={slot.user_name ? 'Nutzer informieren und austragen' : 'Dienst löschen'}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           )}
                         </div>
                       );
