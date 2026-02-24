@@ -40,7 +40,8 @@ export async function POST(request: NextRequest) {
 
     const userName = slot.user_name || 'Helfer';
     const userContact = slot.user_contact ? normalizeEmail(slot.user_contact) : null;
-    const match = slot.match as { id: number; opponent: string; date: string; match_date: string | null; team?: string | null } | null;
+    const matchRaw = Array.isArray(slot.match) ? slot.match[0] : slot.match;
+    const match = matchRaw as { id: number; opponent: string; date: string; match_date: string | null; team?: string | null } | null | undefined;
 
     const { error } = await confirmCancellation(slotId);
     if (error) {
