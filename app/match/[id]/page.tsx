@@ -233,9 +233,9 @@ export default function MatchDetail() {
         <motion.div 
            initial={{ opacity: 0, scale: 0.95 }}
            animate={{ opacity: 1, scale: 1 }}
-           className="w-20 h-20 bg-white rounded-[2rem] shadow-xl shadow-blue-900/10 flex items-center justify-center text-4xl mb-6 border border-white/50"
+           className="w-20 h-20 bg-white rounded-[2rem] shadow-xl shadow-blue-900/10 flex items-center justify-center mb-6 border border-white/50 overflow-hidden p-2"
         >
-          ⚽️
+          <img src="/logo.svg" alt="SG Ruwertal" className="h-full w-full object-contain" />
         </motion.div>
         
         <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none mb-2">

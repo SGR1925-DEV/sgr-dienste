@@ -127,9 +127,9 @@ export default function Dashboard() {
             >
               <Lock className="w-4 h-4" />
             </NextLink>
-            <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold border border-blue-200">
-              SGR
-            </div>
+            <NextLink href="/" className="h-10 w-10 flex items-center justify-center rounded-full overflow-hidden border border-slate-200 bg-white shadow-sm" aria-label="Startseite">
+              <img src="/logo.svg" alt="SG Ruwertal" className="h-8 w-8 object-contain" />
+            </NextLink>
           </div>
         </div>
       </header>

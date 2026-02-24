@@ -7,6 +7,10 @@ import Footer from "@/components/ui/Footer";
 export const metadata: Metadata = {
   title: "SG Ruwertal 1925 e.V.",
   description: "Dienstplan Management App",
+  icons: {
+    icon: "/logo.svg",
+    apple: "/logo.svg",
+  },
 };
 
 export default function RootLayout({

@@ -3,16 +3,19 @@ import Link from "next/link";
 export default function Footer() {
   return (
     <footer className="mt-auto py-4 text-center text-xs text-slate-400">
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        <span>© 2025 SG Ruwertal 1925 e.V.</span>
-        <span className="text-slate-300">•</span>
-        <Link href="/legal/impressum" className="hover:text-blue-600">
-          Impressum
-        </Link>
-        <span className="text-slate-300">•</span>
-        <Link href="/legal/datenschutz" className="hover:text-blue-600">
-          Datenschutz
-        </Link>
+      <div className="flex flex-col items-center gap-3">
+        <img src="/logo.svg" alt="SG Ruwertal" className="h-8 w-8 object-contain opacity-60" />
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <span>© 2025 SG Ruwertal 1925 e.V.</span>
+          <span className="text-slate-300">•</span>
+          <Link href="/legal/impressum" className="hover:text-blue-600">
+            Impressum
+          </Link>
+          <span className="text-slate-300">•</span>
+          <Link href="/legal/datenschutz" className="hover:text-blue-600">
+            Datenschutz
+          </Link>
+        </div>
       </div>
     </footer>
   );
