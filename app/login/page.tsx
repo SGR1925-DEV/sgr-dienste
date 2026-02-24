@@ -36,8 +36,8 @@ export default function LoginPage() {
       
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl shadow-slate-900/20">
-            <Lock className="text-white w-8 h-8" />
+          <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl shadow-slate-900/20 border border-slate-100 overflow-hidden">
+            <img src="/logo.svg" alt="SG Ruwertal" className="h-10 w-10 object-contain" />
           </div>
           <h1 className="text-2xl font-black text-slate-900">Admin Login</h1>
           <p className="text-slate-500 text-sm mt-1">Zugang zur SGR Verwaltung</p>

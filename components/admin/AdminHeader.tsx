@@ -27,7 +27,10 @@ export default function AdminHeader({ activeTab, onTabChange, cancellationCount 
   return (
     <header className="bg-slate-900 text-white pt-12 pb-6 px-6 rounded-b-[2.5rem] shadow-xl shadow-slate-900/20 mb-8">
       <div className="flex justify-between items-center mb-6">
-        <div><h1 className="text-2xl font-black">Admin Cockpit</h1></div>
+        <div className="flex items-center gap-3">
+          <img src="/logo.svg" alt="SG Ruwertal" className="h-8 w-8 object-contain brightness-0 invert" />
+          <h1 className="text-2xl font-black">Admin Cockpit</h1>
+        </div>
         <button 
           onClick={handleLogout} 
           className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors"
