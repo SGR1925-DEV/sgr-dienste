@@ -121,8 +121,13 @@ export async function GET(request: NextRequest) {
           : `Heimspiel vs. ${match.opponent}`;
 
         try {
-          await resend.emails.send({
-            from: 'SG Ruwertal <noreply@sgruwertal.de>', // TODO: Update with your verified domain
+          if (!process.env.RESEND_API_KEY?.trim()) {
+            console.error('[Cron Reminders] RESEND_API_KEY fehlt. E-Mails werden nicht versendet.');
+            errors.push(`Match ${match.id}: RESEND_API_KEY nicht gesetzt`);
+            continue;
+          }
+          const { error } = await resend.emails.send({
+            from: 'SG Ruwertal <noreply@sgruwertal.de>',
             to: slot.user_contact,
             subject: `Erinnerung: Dein Dienst beim SG Ruwertal ist übermorgen!`,
             html: `
@@ -172,8 +177,12 @@ Mit sportlichen Grüßen,
 SG Ruwertal
             `,
           });
-
-          remindersSent++;
+          if (error) {
+            console.error(`[Resend] Erinnerungs-Mail an ${slot.user_contact} fehlgeschlagen:`, error);
+            errors.push(`Slot ${slot.id}: ${error.message || 'Resend Fehler'}`);
+          } else {
+            remindersSent++;
+          }
         } catch (emailError) {
           console.error(`Failed to send reminder to ${slot.user_contact}:`, emailError);
           errors.push(`Slot ${slot.id}: Failed to send email`);

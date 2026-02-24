@@ -117,10 +117,18 @@ export default function MatchDetail() {
         const { data: slotsData } = await supabase.from('slots_public').select('*').eq('match_id', matchId).order('id');
         if (slotsData) setSlots(slotsData);
 
+        const emailOk = 'emailSent' in result && result.emailSent === true;
+        const emailFailed = 'emailSent' in result && result.emailSent === false && result.emailError;
+        const message = emailFailed
+          ? `Du hast dich erfolgreich eingetragen. Die Bestätigungs-E-Mail konnte jedoch nicht versendet werden: ${result.emailError}`
+          : emailOk
+            ? 'Du hast dich erfolgreich eingetragen. Eine Bestätigungs-E-Mail wurde an dich gesendet.'
+            : 'Du hast dich erfolgreich eingetragen.';
+
         setAlertDialog({
           isOpen: true,
           title: 'Erfolgreich eingetragen!',
-          message: 'Du hast dich erfolgreich eingetragen. Eine Bestätigungs-E-Mail wurde an dich gesendet.',
+          message,
           variant: 'success',
         });
 

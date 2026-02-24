@@ -1,9 +1,16 @@
 import { Resend } from 'resend';
 
 /**
- * Initialize Resend client
+ * Resend client – Key zur Laufzeit lesen, damit Env in Server Actions/Vercel sicher ankommt
  */
-const resend = new Resend(process.env.RESEND_API_KEY);
+function getResend() {
+  const key = process.env.RESEND_API_KEY;
+  if (!key || !key.trim()) {
+    console.warn('[Resend] RESEND_API_KEY fehlt oder ist leer. E-Mail wird nicht versendet.');
+    return null;
+  }
+  return new Resend(key);
+}
 
 /**
  * Email template for confirmation when user signs up
@@ -111,9 +118,14 @@ export async function sendConfirmationEmail(
   time: string,
   location?: string
 ): Promise<void> {
+  const resend = getResend();
+  if (!resend) {
+    throw new Error('RESEND_API_KEY fehlt oder ist leer. E-Mails werden nicht versendet.');
+  }
+
   try {
-    await resend.emails.send({
-      from: 'SG Ruwertal <noreply@sgruwertal.de>', // TODO: Update with your verified domain
+    const { error } = await resend.emails.send({
+      from: 'SG Ruwertal <noreply@sgruwertal.de>',
       to,
       subject: 'Bestätigung: Dein Dienst bei der SG Ruwertal',
       html: getConfirmationEmailHTML(name, service, matchTitle, date, time, location),
@@ -136,6 +148,11 @@ SG Ruwertal
 Falls du diese Mail fälschlicherweise erhalten hast und dich nicht zum Dienst registriert hast, melde dich bitte umgehend bei: ${process.env.ADMIN_EMAIL || 'den Administratoren'}
       `.trim(),
     });
+    if (error) {
+      console.error('[Resend] Bestätigungs-Mail fehlgeschlagen:', error);
+      throw new Error(error.message || 'Resend API Fehler');
+    }
+    console.info('[Resend] Bestätigungs-Mail gesendet an', to);
   } catch (error) {
     console.error('Failed to send confirmation email:', error);
     throw error;
@@ -152,9 +169,12 @@ export async function sendCancellationEmail(
   matchTitle: string,
   date: string
 ): Promise<void> {
+  const resend = getResend();
+  if (!resend) return;
+
   try {
-    await resend.emails.send({
-      from: 'SG Ruwertal <noreply@sgruwertal.de>', // TODO: Update with your verified domain
+    const { error } = await resend.emails.send({
+      from: 'SG Ruwertal <noreply@sgruwertal.de>',
       to,
       subject: 'Stornierung: Dein Dienst bei der SG Ruwertal',
       html: getCancellationEmailHTML(name, service, matchTitle, date),
@@ -175,6 +195,10 @@ SG Ruwertal
 Falls du diese Mail fälschlicherweise erhalten hast und dich nicht zum Dienst registriert hast, melde dich bitte umgehend bei: ${process.env.ADMIN_EMAIL || 'den Administratoren'}
       `.trim(),
     });
+    if (error) {
+      console.error('[Resend] Stornierungs-Mail fehlgeschlagen:', error);
+      throw new Error(error.message || 'Resend API Fehler');
+    }
   } catch (error) {
     console.error('Failed to send cancellation email:', error);
     throw error;
@@ -243,16 +267,15 @@ export async function sendAdminCancellationNotification(
     return;
   }
 
-  // Build admin dashboard URL
-  // Use NEXT_PUBLIC_BASE_URL if available, otherwise use relative URL
+  const resend = getResend();
+  if (!resend) return;
+
   const baseUrl = process.env.GASTRO_PUBLIC_URL || '';
-  const adminDashboardUrl = baseUrl 
-    ? `${baseUrl}/admin`
-    : '/admin';
+  const adminDashboardUrl = baseUrl ? `${baseUrl}/admin` : '/admin';
 
   try {
-    await resend.emails.send({
-      from: 'SG Ruwertal <noreply@sgruwertal.de>', // TODO: Update with your verified domain
+    const { error } = await resend.emails.send({
+      from: 'SG Ruwertal <noreply@sgruwertal.de>',
       to: adminEmail,
       subject: `⚠️ Stornierungsanfrage: ${userName}`,
       html: getAdminCancellationNotificationHTML(
@@ -279,6 +302,10 @@ Mit sportlichen Grüßen,
 SG Ruwertal Dienstplanmanager
       `.trim(),
     });
+    if (error) {
+      console.error('[Resend] Admin-Benachrichtigung fehlgeschlagen:', error);
+      throw new Error(error.message || 'Resend API Fehler');
+    }
   } catch (error) {
     console.error('Failed to send admin cancellation notification:', error);
     throw error;
