@@ -14,10 +14,65 @@ import { RpcSlotResult } from '@/types';
 interface ActionResult {
   success: boolean;
   error?: string;
+  /** Nur bei success: true – ob die Bestätigungs-Mail versendet wurde */
+  emailSent?: boolean;
+  /** Wenn emailSent === false, Grund (z. B. für Anzeige in der App) */
+  emailError?: string;
 }
 
 const normalizeName = (name: string) => name.trim();
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+/**
+ * Slot + Match laden und Bestätigungs-Mail versenden (für normale Buchung und für „bereits eingetragen“).
+ */
+async function sendConfirmationForSlot(
+  slotId: number,
+  to: string,
+  name: string
+): Promise<{ sent: boolean; error?: string }> {
+  const { data: slot, error: slotError } = await supabaseServer
+    .from('slots')
+    .select(`
+      *,
+      match:matches(id, opponent, date, match_date, time, location, team)
+    `)
+    .eq('id', slotId)
+    .single();
+  if (slotError || !slot) {
+    return { sent: false, error: slotError?.message ?? 'Slot nicht gefunden.' };
+  }
+  let match = slot.match as Record<string, unknown> | null | undefined;
+  if (!match && slot.match_id) {
+    const { data: matchRow } = await supabaseServer
+      .from('matches')
+      .select('id, opponent, date, match_date, time, location, team')
+      .eq('id', slot.match_id)
+      .single();
+    match = matchRow ?? undefined;
+  }
+  if (!match) {
+    return { sent: false, error: 'Match-Daten fehlen.' };
+  }
+  try {
+    const formattedDate = getMatchDisplayDate(match.match_date as string | null, match.date as string);
+    const matchTitle = match.team
+      ? `${match.team} vs. ${match.opponent}`
+      : `Heimspiel vs. ${match.opponent}`;
+    await sendConfirmationEmail(
+      to,
+      name,
+      slot.category,
+      matchTitle,
+      formattedDate,
+      slot.time,
+      match.location as string | undefined
+    );
+    return { sent: true };
+  } catch (err) {
+    return { sent: false, error: err instanceof Error ? err.message : 'E-Mail-Versand fehlgeschlagen.' };
+  }
+}
 
 /**
  * Server Action: Slot buchen
@@ -48,12 +103,53 @@ export async function bookSlot(
     });
 
     if (error) {
-      return { success: false, error: 'Fehler beim Speichern. Bitte erneut versuchen.' };
+      console.error('[bookSlot] RPC book_slot error:', error);
+      return {
+        success: false,
+        error: `Fehler beim Speichern: ${'message' in error && typeof error.message === 'string'
+          ? error.message
+          : 'Bitte erneut versuchen.'}`,
+      };
     }
 
-    const result = (Array.isArray(data) ? data[0] : data) as RpcSlotResult | undefined;
+    let result = (Array.isArray(data) ? data[0] : data) as RpcSlotResult | undefined;
     if (!result?.success) {
-      return { success: false, error: 'Slot wurde gerade belegt' };
+      const { data: currentSlot } = await supabaseServer
+        .from('slots')
+        .select('user_contact, user_name, match_id')
+        .eq('id', slotId)
+        .single();
+
+      const contactMatch = currentSlot?.user_contact?.toLowerCase() === normalizedEmail;
+      const slotStillEmpty = !currentSlot?.user_contact && !currentSlot?.user_name;
+
+      if (contactMatch && currentSlot?.match_id) {
+        revalidatePath(`/match/${currentSlot.match_id}`);
+        revalidatePath('/');
+        const emailResult = await sendConfirmationForSlot(slotId, normalizedEmail, normalizedName);
+        return { success: true, emailSent: emailResult.sent, emailError: emailResult.error };
+      }
+
+      if (slotStillEmpty) {
+        // RPC sagte „belegt“, Slot ist aber noch leer – z. B. Race oder temporärer Fehler → einmal erneut versuchen
+        const retry = await supabaseServer.rpc('book_slot', {
+          p_slot_id: slotId,
+          p_name: normalizedName,
+          p_email: normalizedEmail,
+        });
+        const retryResult = (Array.isArray(retry.data) ? retry.data[0] : retry.data) as RpcSlotResult | undefined;
+        if (!retry.error && retryResult?.success) {
+          result = retryResult;
+          // Weiter mit normalem Ablauf (Slot laden, E-Mail senden) – nicht return, Fall durchlassen
+        } else {
+          return {
+            success: false,
+            error: 'Der Slot konnte nicht gebucht werden. Bitte Seite neu laden und es erneut versuchen.',
+          };
+        }
+      } else {
+        return { success: false, error: 'Slot wurde gerade belegt' };
+      }
     }
 
     const { data: slot, error: slotError } = await supabaseServer
@@ -74,14 +170,31 @@ export async function bookSlot(
       .single();
 
     if (slotError || !slot) {
-      return { success: true };
+      revalidatePath('/');
+      return {
+        success: true,
+        emailSent: false,
+        emailError: slotError?.message ? `Slot-Daten nicht geladen: ${slotError.message}` : 'Slot-Daten konnten nach der Buchung nicht geladen werden.',
+      };
     }
 
-    // Send confirmation email only if contact is a valid email
-    const match = slot.match as any;
-    if (match) {
-      const formattedDate = getMatchDisplayDate(match.match_date, match.date);
-      const matchTitle = match.team 
+    let match = slot.match as Record<string, unknown> | null | undefined;
+    if (!match && slot.match_id) {
+      const { data: matchRow } = await supabaseServer
+        .from('matches')
+        .select('id, opponent, date, match_date, time, location, team')
+        .eq('id', slot.match_id)
+        .single();
+      match = matchRow ?? undefined;
+    }
+    let emailSent = false;
+    let emailErrorMsg: string | undefined;
+
+    if (!match) {
+      emailErrorMsg = 'Match-Daten für E-Mail fehlen.';
+    } else {
+      const formattedDate = getMatchDisplayDate(match.match_date as string | null, match.date as string);
+      const matchTitle = match.team
         ? `${match.team} vs. ${match.opponent}`
         : `Heimspiel vs. ${match.opponent}`;
 
@@ -93,23 +206,22 @@ export async function bookSlot(
           matchTitle,
           formattedDate,
           slot.time,
-          match.location
+          match.location as string | undefined
         );
-      } catch (emailError) {
-        // Log email error but don't fail the sign-up
-        console.error('Failed to send confirmation email:', emailError);
-        // Continue - the sign-up was successful even if email fails
+        emailSent = true;
+      } catch (err) {
+        emailErrorMsg = err instanceof Error ? err.message : 'Unbekannter Fehler beim E-Mail-Versand.';
       }
     }
 
     // Revalidate the match page to show updated slot status
-    const matchId = slot?.match_id ?? match?.id;
+    const matchId = slot?.match_id ?? (match as { id?: number } | undefined)?.id;
     if (matchId) {
       revalidatePath(`/match/${matchId}`);
     }
     revalidatePath('/'); // Also revalidate homepage for leaderboard updates
 
-    return { success: true };
+    return { success: true, emailSent, emailError: emailErrorMsg };
   } catch (error) {
     console.error('Sign up error:', error);
     return { success: false, error: 'Ein unerwarteter Fehler ist aufgetreten' };
@@ -146,7 +258,11 @@ export async function requestCancellation(slotId: number, email: string): Promis
     });
 
     if (error) {
-      return { success: false, error: 'Fehler beim Speichern. Bitte erneut versuchen.' };
+      console.error('[requestCancellation] RPC error:', error);
+      return {
+        success: false,
+        error: 'message' in error && typeof error.message === 'string' ? error.message : 'Fehler beim Speichern. Bitte erneut versuchen.',
+      };
     }
 
     const result = (Array.isArray(data) ? data[0] : data) as RpcSlotResult | undefined;
